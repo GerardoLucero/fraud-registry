@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="es-MX">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Registro de Fraude — ¿Ya reportaron este número?</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+  :root {
+    --bg: #0f1115;
+    --card: #1a1d24;
+    --border: #2a2e37;
+    --text: #e8e9ec;
+    --muted: #9aa0ab;
+    --accent: #e34a4a;
+    --safe: #4ac97f;
+    --warn: #e3b34a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding-bottom: 3rem;
+  }
+  header {
+    padding: 1.5rem 1rem 1rem;
+    text-align: center;
+  }
+  header h1 { font-size: 1.4rem; margin: 0 0 0.25rem; }
+  header p { color: var(--muted); margin: 0; font-size: 0.9rem; }
+  main { max-width: 480px; margin: 0 auto; padding: 0 1rem; }
+  section {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.25rem;
+    margin-bottom: 1rem;
+  }
+  section h2 { font-size: 1rem; margin: 0 0 0.75rem; color: var(--muted); font-weight: 600; }
+  input, textarea, button {
+    width: 100%;
+    font-size: 1rem;
+    font-family: inherit;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: #12141a;
+    color: var(--text);
+    padding: 0.85rem;
+  }
+  input:focus, textarea:focus { outline: 2px solid var(--accent); border-color: transparent; }
+  textarea { resize: vertical; min-height: 80px; margin-top: 0.5rem; }
+  button {
+    margin-top: 0.75rem;
+    background: var(--accent);
+    border: none;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button:disabled { opacity: 0.5; cursor: wait; }
+  #search-results { margin-top: 1rem; }
+  .result-card {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.85rem;
+    margin-bottom: 0.5rem;
+  }
+  .badge {
+    display: inline-block;
+    padding: 0.2rem 0.6rem;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    margin-bottom: 0.4rem;
+  }
+  .badge-high { background: rgba(227,74,74,0.15); color: var(--accent); }
+  .badge-low { background: rgba(227,179,74,0.15); color: var(--warn); }
+  .badge-none { background: rgba(74,201,127,0.15); color: var(--safe); }
+  .muted { color: var(--muted); font-size: 0.85rem; }
+  #map { height: 320px; border-radius: 8px; }
+  .status-msg { font-size: 0.9rem; margin-top: 0.5rem; }
+  .status-ok { color: var(--safe); }
+  .status-err { color: var(--accent); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>¿Te llamó un número sospechoso?</h1>
+  <p>Busca si ya lo reportaron, o repórtalo tú en 10 segundos.</p>
+</header>
+
+<main>
+  <section id="search-section">
+    <h2>Buscar número</h2>
+    <input type="tel" id="search-input" placeholder="Ej. 55 1234 5678" autocomplete="tel" inputmode="tel">
+    <button id="search-btn">Buscar</button>
+    <div id="search-results"></div>
+  </section>
+
+  <section id="report-section">
+    <h2>Reportar un número</h2>
+    <input type="tel" id="report-phone" placeholder="Número que te llamó" autocomplete="tel" inputmode="tel" required>
+    <textarea id="report-description" placeholder="¿Qué pasó? (ej. dijo ser del banco, pidió un código, cobranza falsa...)" required></textarea>
+    <button id="report-btn">Reportar</button>
+    <div id="report-status" class="status-msg"></div>
+  </section>
+
+  <section id="map-section">
+    <h2>Mapa por región</h2>
+    <div id="map"></div>
+    <p class="muted">Agregado por código LADA, no ubicación exacta.</p>
+  </section>
+</main>
+
+<script type="module">
+  import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+  import 'https://esm.sh/leaflet@1.9.4';
+
+  const SUPABASE_URL = 'https://ifcgwnbaiozuvjorkcoc.supabase.co';
+  const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_Z2tMpWR9mWfzttfralmWag_Aq7xSGkB';
+
+  const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+
+  const normalizePhone = (raw) => raw.replace(/\D/g, '');
+
+  // --- Search ---
+  const searchInput = document.getElementById('search-input');
+  const searchBtn = document.getElementById('search-btn');
+  const searchResults = document.getElementById('search-results');
+
+  async function searchNumber() {
+    const phone = normalizePhone(searchInput.value);
+    if (phone.length < 8) {
+      searchResults.innerHTML = '<p class="status-msg status-err">Escribe un número válido.</p>';
+      return;
+    }
+    searchBtn.disabled = true;
+    searchResults.innerHTML = '<p class="muted">Buscando...</p>';
+
+    const { data, error } = await supabase
+      .from('phone_confidence')
+      .select('*')
+      .eq('phone_number', phone)
+      .maybeSingle();
+
+    searchBtn.disabled = false;
+
+    if (error) {
+      searchResults.innerHTML = '<p class="status-msg status-err">Error al buscar. Intenta de nuevo.</p>';
+      return;
+    }
+
+    if (!data || data.report_count === 0) {
+      searchResults.innerHTML = `
+        <div class="result-card">
+          <span class="badge badge-none">Sin reportes</span>
+          <p class="muted">Nadie ha reportado este número todavía. Si te pasó algo, sé el primero en reportarlo abajo.</p>
+        </div>`;
+      return;
+    }
+
+    const isHighConfidence = data.report_count >= 3;
+    searchResults.innerHTML = `
+      <div class="result-card">
+        <span class="badge ${isHighConfidence ? 'badge-high' : 'badge-low'}">
+          ${isHighConfidence ? 'Alta probabilidad de fraude' : 'Reportado — pocas coincidencias'}
+        </span>
+        <p>${data.report_count} reporte${data.report_count === 1 ? '' : 's'} único${data.report_count === 1 ? '' : 's'}</p>
+        <p class="muted">Último reporte: ${new Date(data.last_reported_at).toLocaleDateString('es-MX')}</p>
+      </div>`;
+  }
+
+  searchBtn.addEventListener('click', searchNumber);
+  searchInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') searchNumber(); });
+
+  // --- Report form ---
+  const reportPhone = document.getElementById('report-phone');
+  const reportDescription = document.getElementById('report-description');
+  const reportBtn = document.getElementById('report-btn');
+  const reportStatus = document.getElementById('report-status');
+
+  async function submitReport() {
+    const phone = normalizePhone(reportPhone.value);
+    const description = reportDescription.value.trim();
+
+    if (phone.length < 8 || description.length < 5) {
+      reportStatus.textContent = 'Completa el número y describe qué pasó.';
+      reportStatus.className = 'status-msg status-err';
+      return;
+    }
+
+    reportBtn.disabled = true;
+    reportStatus.textContent = 'Enviando...';
+    reportStatus.className = 'status-msg';
+
+    const { error } = await supabase
+      .from('reports')
+      .insert({ phone_number: phone, description });
+
+    reportBtn.disabled = false;
+
+    if (error) {
+      reportStatus.textContent = 'No se pudo enviar el reporte. Intenta de nuevo.';
+      reportStatus.className = 'status-msg status-err';
+      return;
+    }
+
+    reportStatus.textContent = 'Reporte enviado. Gracias por ayudar a otros.';
+    reportStatus.className = 'status-msg status-ok';
+    reportPhone.value = '';
+    reportDescription.value = '';
+  }
+
+  reportBtn.addEventListener('click', submitReport);
+
+  // --- Map ---
+  async function loadMap() {
+    const map = L.map('map').setView([23.6345, -102.5528], 5); // México
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors',
+      maxZoom: 12,
+    }).addTo(map);
+
+    const { data, error } = await supabase
+      .from('fraud_counts_by_lada')
+      .select('*')
+      .gt('total_reports', 0);
+
+    if (error || !data) return;
+
+    data.forEach((row) => {
+      const radius = Math.min(8 + row.total_reports * 2, 40);
+      L.circleMarker([row.lat, row.lon], {
+        radius,
+        color: '#e34a4a',
+        fillColor: '#e34a4a',
+        fillOpacity: 0.4,
+      })
+        .addTo(map)
+        .bindPopup(`<strong>${row.region}</strong><br>${row.total_reports} reportes`);
+    });
+  }
+
+  loadMap();
+</script>
+
+</body>
+</html>
