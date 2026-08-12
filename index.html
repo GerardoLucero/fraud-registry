@@ -38,10 +38,15 @@
     z-index: 20;
   }
   header h1 {
-    font-size: 0.95rem;
-    margin: 0 0 0.6rem;
-    font-weight: 600;
+    font-size: 1rem;
+    margin: 0;
+    font-weight: 700;
     color: var(--text);
+  }
+  header p.tagline {
+    font-size: 0.78rem;
+    color: var(--muted);
+    margin: 0.1rem 0 0.6rem;
   }
   .search-row { display: flex; gap: 0.5rem; }
   .search-row input {
@@ -268,7 +273,7 @@
 
 <div id="app">
   <header>
-    <h1>Radar Urbano — busca un número o reporta un incidente cerca de ti</h1>
+    <h1>Radar Urbano</h1>
     <div class="search-row">
       <input type="tel" id="search-input" placeholder="Ej. 55 1234 5678" autocomplete="tel" inputmode="tel">
       <button id="search-btn">Buscar</button>
@@ -280,7 +285,7 @@
     <div id="map"></div>
 
     <div id="map-controls">
-      <button id="zone-summary-btn">🛡️ ¿Qué tan segura es esta zona?</button>
+      <button id="zone-summary-btn">📍 Seguridad de mi zona</button>
       <div id="zone-summary-panel" class="hidden"></div>
       <select id="time-filter">
         <option value="7">Últimos 7 días</option>
@@ -600,13 +605,31 @@
   const zoneSummaryBtn = document.getElementById('zone-summary-btn');
   const zoneSummaryPanel = document.getElementById('zone-summary-panel');
 
+  function getZoneCenter() {
+    // Prioridad: tu ubicación real (GPS). Si no hay permiso, cae al centro visible del mapa.
+    return new Promise((resolve) => {
+      if (!navigator.geolocation) {
+        resolve({ ...window.__radarMap.getCenter(), isRealLocation: false });
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(
+        (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude, isRealLocation: true }),
+        () => resolve({ ...window.__radarMap.getCenter(), isRealLocation: false }),
+        { timeout: 6000 }
+      );
+    });
+  }
+
   zoneSummaryBtn.addEventListener('click', async () => {
     if (!window.__radarMap) return;
     zoneSummaryPanel.classList.remove('hidden');
-    zoneSummaryPanel.textContent = 'Analizando reportes cercanos...';
+    zoneSummaryPanel.textContent = 'Obteniendo tu ubicación...';
 
-    const center = window.__radarMap.getCenter();
+    const center = await getZoneCenter();
     const box = 0.15; // ~15km, "esta zona"
+    zoneSummaryPanel.textContent = center.isRealLocation
+      ? 'Analizando reportes cerca de ti...'
+      : 'No se pudo usar tu ubicación — analizando lo que ves en el mapa...';
 
     const { data: nearby, error } = await supabase
       .from('reports')
