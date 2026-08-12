@@ -69,7 +69,7 @@ Responde UNICAMENTE con JSON valido, sin texto adicional: {"verdict": "corrobora
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      model: 'deepseek-ai/deepseek-v3.1',
+      model: 'deepseek-ai/deepseek-v4-flash-0731',
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.1,
       max_tokens: 200,
