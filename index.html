@@ -105,7 +105,10 @@
 
   /* ---- Mapa: el elemento dominante de la pantalla ---- */
   #map-wrap { flex: 1 1 auto; position: relative; min-height: 0; }
-  #map { width: 100%; height: 100%; }
+  /* z-index explícito para que #map cree su propio stacking context --
+     sin esto, los panes internos de Leaflet (hasta z-index:1000) se comparan
+     directo contra el FAB y le ganan aunque esté después en el DOM. */
+  #map { width: 100%; height: 100%; position: relative; z-index: 0; }
   .map-caption {
     position: absolute;
     bottom: 0.75rem;
@@ -343,6 +346,11 @@
       attribution: '&copy; OpenStreetMap contributors',
       maxZoom: 12,
     }).addTo(map);
+
+    // El contenedor vive en un layout flex (100dvh); en algunos navegadores móviles
+    // el tamaño final se asienta después del primer paint. Forzamos un recálculo.
+    setTimeout(() => map.invalidateSize(), 100);
+    window.addEventListener('resize', () => map.invalidateSize());
 
     const { data, error } = await supabase
       .from('fraud_counts_by_lada')
