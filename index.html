@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>Registro de Fraude — ¿Ya reportaron este número?</title>
+<title>Radar Urbano — reporta y consulta fraudes, robos y asaltos cerca de ti</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <style>
   :root {
@@ -185,13 +185,35 @@
   .status-msg { font-size: 0.9rem; margin-top: 0.5rem; }
   .status-ok { color: var(--safe); }
   .status-err { color: var(--accent); }
+
+  #location-row {
+    margin-top: 0.5rem;
+    display: flex;
+    gap: 0.6rem;
+    align-items: center;
+  }
+  #use-location-btn {
+    width: auto;
+    flex: none;
+    background: #12141a;
+    border: 1px solid var(--border);
+    font-weight: 500;
+    padding: 0.6rem 0.9rem;
+    font-size: 0.9rem;
+  }
+  #use-location-btn:hover { background: #1a1d24; }
+  #report-location-text { margin-top: 0.5rem; }
+
+  /* ---- Leyenda de capas del mapa ---- */
+  .badge-phone { background: rgba(227,74,74,0.15); color: var(--accent); }
+  .badge-incident { background: rgba(120,140,255,0.15); color: #8ca0ff; }
 </style>
 </head>
 <body>
 
 <div id="app">
   <header>
-    <h1>¿Te llamó un número sospechoso? Búscalo antes de contestar.</h1>
+    <h1>Radar Urbano — busca un número o reporta un incidente cerca de ti</h1>
     <div class="search-row">
       <input type="tel" id="search-input" placeholder="Ej. 55 1234 5678" autocomplete="tel" inputmode="tel">
       <button id="search-btn">Buscar</button>
@@ -201,11 +223,14 @@
 
   <div id="map-wrap">
     <div id="map"></div>
-    <div class="map-caption">Reportes agregados por región (LADA), no ubicación exacta</div>
+    <div class="map-caption">
+      <span class="badge badge-phone" style="margin:0 0.3rem 0 0;">●</span>fraude telefónico (por región)
+      <span class="badge badge-incident" style="margin:0 0.3rem 0 0.6rem;">●</span>otros incidentes
+    </div>
 
     <button id="fab">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-      Reportar número
+      Reportar
     </button>
   </div>
 </div>
@@ -213,11 +238,16 @@
 <div id="report-overlay">
   <div id="report-modal">
     <div class="modal-header">
-      <h2>Reportar un número</h2>
+      <h2>Reportar un incidente</h2>
       <button id="report-close" aria-label="Cerrar">&times;</button>
     </div>
-    <input type="tel" id="report-phone" placeholder="Número que te llamó" autocomplete="tel" inputmode="tel" required>
-    <textarea id="report-description" placeholder="¿Qué pasó? (ej. dijo ser del banco, pidió un código, cobranza falsa...)" required></textarea>
+    <textarea id="report-description" placeholder="¿Qué pasó? Fraude telefónico, robo, asalto, lo que haya sido — no hace falta elegir categoría, nosotros la detectamos." required></textarea>
+    <input type="tel" id="report-phone" placeholder="Número de teléfono (si aplica)" autocomplete="tel" inputmode="tel" style="margin-top:0.5rem">
+    <div id="location-row">
+      <button id="use-location-btn" type="button">📍 Usar mi ubicación</button>
+      <span id="location-status" class="muted"></span>
+    </div>
+    <input type="text" id="report-location-text" placeholder="O escribe la zona/colonia (opcional)">
     <button id="report-btn" style="width:100%; margin-top:0.75rem;">Reportar</button>
     <div id="report-status" class="status-msg"></div>
   </div>
@@ -290,12 +320,18 @@
   const closeBtn = document.getElementById('report-close');
   const reportPhone = document.getElementById('report-phone');
   const reportDescription = document.getElementById('report-description');
+  const reportLocationText = document.getElementById('report-location-text');
+  const useLocationBtn = document.getElementById('use-location-btn');
+  const locationStatus = document.getElementById('location-status');
   const reportBtn = document.getElementById('report-btn');
   const reportStatus = document.getElementById('report-status');
 
+  let capturedLat = null;
+  let capturedLon = null;
+
   function openModal() {
     overlay.classList.add('open');
-    setTimeout(() => reportPhone.focus(), 50);
+    setTimeout(() => reportDescription.focus(), 50);
   }
   function closeModal() { overlay.classList.remove('open'); }
 
@@ -303,12 +339,43 @@
   closeBtn.addEventListener('click', closeModal);
   overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(); });
 
+  useLocationBtn.addEventListener('click', () => {
+    if (!navigator.geolocation) {
+      locationStatus.textContent = 'Tu navegador no soporta ubicación.';
+      return;
+    }
+    locationStatus.textContent = 'Obteniendo ubicación...';
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        capturedLat = pos.coords.latitude;
+        capturedLon = pos.coords.longitude;
+        locationStatus.textContent = '✓ Ubicación capturada';
+      },
+      () => {
+        locationStatus.textContent = 'No se pudo obtener — escribe la zona abajo.';
+      },
+      { timeout: 8000 }
+    );
+  });
+
   async function submitReport() {
     const phone = normalizePhone(reportPhone.value);
     const description = reportDescription.value.trim();
+    const locationText = reportLocationText.value.trim();
+    const phoneTyped = reportPhone.value.trim().length > 0;
 
-    if (phone.length < 8 || description.length < 5) {
-      reportStatus.textContent = 'Completa el número y describe qué pasó.';
+    if (description.length < 5) {
+      reportStatus.textContent = 'Describe qué pasó.';
+      reportStatus.className = 'status-msg status-err';
+      return;
+    }
+    if (phoneTyped && phone.length < 8) {
+      reportStatus.textContent = 'El número parece incompleto.';
+      reportStatus.className = 'status-msg status-err';
+      return;
+    }
+    if (phone.length < 8 && capturedLat === null && !locationText) {
+      reportStatus.textContent = 'Agrega un número, tu ubicación, o la zona donde pasó.';
       reportStatus.className = 'status-msg status-err';
       return;
     }
@@ -317,9 +384,12 @@
     reportStatus.textContent = 'Enviando...';
     reportStatus.className = 'status-msg';
 
-    const { error } = await supabase
-      .from('reports')
-      .insert({ phone_number: phone, description });
+    const payload = { description };
+    if (phone.length >= 8) payload.phone_number = phone;
+    if (capturedLat !== null) { payload.lat = capturedLat; payload.lon = capturedLon; }
+    if (locationText) payload.location_text = locationText;
+
+    const { error } = await supabase.from('reports').insert(payload);
 
     reportBtn.disabled = false;
 
@@ -335,6 +405,10 @@
     reportStatus.className = 'status-msg status-ok';
     reportPhone.value = '';
     reportDescription.value = '';
+    reportLocationText.value = '';
+    locationStatus.textContent = '';
+    capturedLat = null;
+    capturedLon = null;
     setTimeout(closeModal, 1200);
   }
 
@@ -354,25 +428,48 @@
     setTimeout(() => map.invalidateSize(), 100);
     window.addEventListener('resize', () => map.invalidateSize());
 
-    const { data, error } = await supabase
+    // Capa 1: fraude telefónico agregado por región (LADA) -- círculos rojos.
+    const { data: ladaData, error: ladaError } = await supabase
       .from('fraud_counts_by_lada')
       .select('*')
       .gt('total_reports', 0);
 
-    if (error || !data) return;
+    if (!ladaError && ladaData) {
+      ladaData.forEach((row) => {
+        const radius = Math.min(10 + row.total_reports * 3, 48);
+        L.circleMarker([row.lat, row.lon], {
+          radius,
+          color: '#e34a4a',
+          weight: 2,
+          fillColor: '#e34a4a',
+          fillOpacity: 0.35,
+        })
+          .addTo(map)
+          .bindPopup(`<strong>${row.region}</strong><br>${row.total_reports} reporte${row.total_reports === 1 ? '' : 's'} de fraude telefónico`);
+      });
+    }
 
-    data.forEach((row) => {
-      const radius = Math.min(10 + row.total_reports * 3, 48);
-      L.circleMarker([row.lat, row.lon], {
-        radius,
-        color: '#e34a4a',
-        weight: 2,
-        fillColor: '#e34a4a',
-        fillOpacity: 0.35,
-      })
-        .addTo(map)
-        .bindPopup(`<strong>${row.region}</strong><br>${row.total_reports} reporte${row.total_reports === 1 ? '' : 's'}`);
-    });
+    // Capa 2: incidentes con ubicación GPS (robo, asalto, etc.) -- puntos individuales azules.
+    // Coordenadas ya vienen difuminadas a ~1km desde el servidor, nunca la ubicación exacta.
+    const { data: incidentData, error: incidentError } = await supabase
+      .from('reports')
+      .select('lat, lon, category, created_at')
+      .not('lat', 'is', null);
+
+    if (!incidentError && incidentData) {
+      incidentData.forEach((row) => {
+        const label = (row.category || 'incidente').replace(/_/g, ' ');
+        L.circleMarker([row.lat, row.lon], {
+          radius: 8,
+          color: '#8ca0ff',
+          weight: 2,
+          fillColor: '#8ca0ff',
+          fillOpacity: 0.5,
+        })
+          .addTo(map)
+          .bindPopup(`<strong>${label}</strong><br>${new Date(row.created_at).toLocaleDateString('es-MX')}`);
+      });
+    }
   }
 
   loadMap();
