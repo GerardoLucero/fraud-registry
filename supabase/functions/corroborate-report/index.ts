@@ -66,18 +66,34 @@ Deno.serve(async (req) => {
     return new Response('ok: skipped, no API key configured', { status: 200 })
   }
 
-  // 1. Clasificacion: todo reporte (telefonico o de incidente fisico) se etiqueta.
-  // Categoria abierta, no un dropdown fijo -- la IA decide la etiqueta a partir del texto libre.
-  const classifyPrompt = `Eres un clasificador de reportes de un radar urbano comunitario en Mexico. Lee la descripcion y asignale UNA categoria corta en snake_case en espanol (ejemplos: fraude_telefonico, robo_casa_habitacion, robo_auto, asalto_transeunte, extorsion, acoso, otro). Si no encaja en ninguna categoria comun, usa "otro" seguido de una palabra clave, ej "otro_vandalismo".
+  // 1. Clasificacion + extraccion de entidades: todo reporte se etiqueta y se le
+  // sacan datos estructurados del texto libre, sin pedirle mas campos al usuario.
+  // Categoria abierta (no un dropdown fijo) -- la IA decide la etiqueta.
+  const classifyPrompt = `Eres un clasificador de reportes de un radar urbano comunitario en Mexico. Lee la descripcion y extrae:
+1. category: UNA categoria corta en snake_case en espanol (ejemplos: fraude_telefonico, robo_casa_habitacion, robo_auto, asalto_transeunte, extorsion, acoso, otro). Si no encaja en ninguna categoria comun, usa "otro" seguido de una palabra clave, ej "otro_vandalismo".
+2. time_of_day: si el texto menciona cuando paso (manana, tarde, noche, madrugada), o null si no lo dice.
+3. weapon: si se menciona un arma y cual (ej "arma de fuego", "cuchillo"), o null si no se menciona.
+4. vehicle: si se menciona un vehiculo del/los agresores (ej "moto negra", "auto sedan gris"), o null si no se menciona.
 
 Descripcion: ${newRow.description}
 ${newRow.phone_number ? `(Este reporte tiene numero de telefono asociado: probablemente fraude telefonico salvo que el texto diga otra cosa)` : ''}
 
-Responde UNICAMENTE JSON valido: {"category": "..."}`
+Responde UNICAMENTE JSON valido: {"category": "...", "time_of_day": null, "weapon": null, "vehicle": null}`
 
   const classification = await callNim(classifyPrompt)
   if (classification?.category) {
-    await supabaseAdmin.from('reports').update({ category: classification.category }).eq('id', newRow.id)
+    const entities: Record<string, string> = {}
+    if (classification.time_of_day) entities.time_of_day = classification.time_of_day
+    if (classification.weapon) entities.weapon = classification.weapon
+    if (classification.vehicle) entities.vehicle = classification.vehicle
+
+    await supabaseAdmin
+      .from('reports')
+      .update({
+        category: classification.category,
+        entities: Object.keys(entities).length > 0 ? entities : null,
+      })
+      .eq('id', newRow.id)
   }
 
   // 2. Corroboracion: solo aplica a reportes con numero de telefono (es la unica

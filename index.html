@@ -207,6 +207,61 @@
   /* ---- Leyenda de capas del mapa ---- */
   .badge-phone { background: rgba(227,74,74,0.15); color: var(--accent); }
   .badge-incident { background: rgba(120,140,255,0.15); color: #8ca0ff; }
+
+  /* ---- Controles del mapa: resumen de zona + filtros ---- */
+  #map-controls {
+    position: absolute;
+    top: 0.75rem;
+    left: 0.75rem;
+    z-index: 10;
+    max-width: 280px;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  #zone-summary-btn {
+    width: auto;
+    background: rgba(26,29,36,0.92);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-size: 0.85rem;
+    font-weight: 500;
+    padding: 0.6rem 0.9rem;
+    text-align: left;
+  }
+  #zone-summary-btn:hover { background: #1a1d24; }
+  #zone-summary-panel {
+    background: rgba(26,29,36,0.96);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.75rem;
+    font-size: 0.85rem;
+    line-height: 1.4;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+  }
+  #zone-summary-panel.hidden { display: none; }
+  #time-filter {
+    padding: 0.5rem 0.7rem;
+    font-size: 0.82rem;
+    background: rgba(26,29,36,0.92);
+  }
+  #category-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+  }
+  #category-chips:empty { display: none; }
+  .chip {
+    padding: 0.3rem 0.65rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    background: rgba(26,29,36,0.92);
+    border: 1px solid var(--border);
+    color: var(--muted);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .chip.active { background: rgba(140,160,255,0.18); color: #8ca0ff; border-color: #8ca0ff; }
 </style>
 </head>
 <body>
@@ -223,6 +278,18 @@
 
   <div id="map-wrap">
     <div id="map"></div>
+
+    <div id="map-controls">
+      <button id="zone-summary-btn">🛡️ ¿Qué tan segura es esta zona?</button>
+      <div id="zone-summary-panel" class="hidden"></div>
+      <select id="time-filter">
+        <option value="7">Últimos 7 días</option>
+        <option value="30" selected>Últimos 30 días</option>
+        <option value="90">Últimos 90 días</option>
+      </select>
+      <div id="category-chips"></div>
+    </div>
+
     <div class="map-caption">
       <span class="badge badge-phone" style="margin:0 0.3rem 0 0;">●</span>fraude telefónico (por región)
       <span class="badge badge-incident" style="margin:0 0.3rem 0 0.6rem;">●</span>otros incidentes
@@ -417,6 +484,8 @@
   // --- Map (elemento dominante de la pantalla) ---
   async function loadMap() {
     const map = L.map('map', { zoomControl: false }).setView([23.6345, -102.5528], 5);
+    window.__radarMap = map;
+    incidentLayer.addTo(map);
     L.control.zoom({ position: 'bottomleft' }).addTo(map);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap contributors',
@@ -451,14 +520,66 @@
 
     // Capa 2: incidentes con ubicación GPS (robo, asalto, etc.) -- puntos individuales azules.
     // Coordenadas ya vienen difuminadas a ~1km desde el servidor, nunca la ubicación exacta.
+    // Se trae una ventana de 90 días; el filtro de tiempo/categoría es client-side sobre este set.
+    const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
     const { data: incidentData, error: incidentError } = await supabase
       .from('reports')
-      .select('lat, lon, category, created_at')
-      .not('lat', 'is', null);
+      .select('lat, lon, category, description, entities, created_at')
+      .not('lat', 'is', null)
+      .gte('created_at', ninetyDaysAgo)
+      .order('created_at', { ascending: false });
 
     if (!incidentError && incidentData) {
-      incidentData.forEach((row) => {
+      allIncidents = incidentData;
+      buildCategoryChips();
+      renderIncidents();
+    }
+  }
+
+  // --- Capa de incidentes filtrable (tiempo + categoría) ---
+  let allIncidents = [];
+  const activeCategories = new Set();
+  const incidentLayer = L.layerGroup();
+  const timeFilter = document.getElementById('time-filter');
+  const categoryChipsEl = document.getElementById('category-chips');
+
+  function buildCategoryChips() {
+    const categories = [...new Set(allIncidents.map((r) => r.category || 'sin_clasificar'))];
+    categories.forEach((c) => activeCategories.add(c));
+    categoryChipsEl.innerHTML = categories
+      .map((c) => `<span class="chip active" data-category="${c}">${c.replace(/_/g, ' ')}</span>`)
+      .join('');
+    categoryChipsEl.querySelectorAll('.chip').forEach((chip) => {
+      chip.addEventListener('click', () => {
+        const cat = chip.dataset.category;
+        if (activeCategories.has(cat)) {
+          activeCategories.delete(cat);
+          chip.classList.remove('active');
+        } else {
+          activeCategories.add(cat);
+          chip.classList.add('active');
+        }
+        renderIncidents();
+      });
+    });
+  }
+
+  function renderIncidents() {
+    incidentLayer.clearLayers();
+    const days = Number(timeFilter.value);
+    const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+
+    allIncidents
+      .filter((row) => new Date(row.created_at).getTime() >= cutoff)
+      .filter((row) => activeCategories.has(row.category || 'sin_clasificar'))
+      .forEach((row) => {
         const label = (row.category || 'incidente').replace(/_/g, ' ');
+        const entityBits = [];
+        if (row.entities?.time_of_day) entityBits.push(row.entities.time_of_day);
+        if (row.entities?.weapon) entityBits.push(row.entities.weapon);
+        if (row.entities?.vehicle) entityBits.push(row.entities.vehicle);
+        const entityLine = entityBits.length ? `<br><span class="muted">${entityBits.join(' · ')}</span>` : '';
+
         L.circleMarker([row.lat, row.lon], {
           radius: 8,
           color: '#8ca0ff',
@@ -466,13 +587,56 @@
           fillColor: '#8ca0ff',
           fillOpacity: 0.5,
         })
-          .addTo(map)
-          .bindPopup(`<strong>${label}</strong><br>${new Date(row.created_at).toLocaleDateString('es-MX')}`);
+          .addTo(incidentLayer)
+          .bindPopup(`<strong>${label}</strong><br>${new Date(row.created_at).toLocaleDateString('es-MX')}${entityLine}`);
       });
-    }
   }
 
+  timeFilter.addEventListener('change', renderIncidents);
+
   loadMap();
+
+  // --- Resumen de zona con IA ---
+  const zoneSummaryBtn = document.getElementById('zone-summary-btn');
+  const zoneSummaryPanel = document.getElementById('zone-summary-panel');
+
+  zoneSummaryBtn.addEventListener('click', async () => {
+    if (!window.__radarMap) return;
+    zoneSummaryPanel.classList.remove('hidden');
+    zoneSummaryPanel.textContent = 'Analizando reportes cercanos...';
+
+    const center = window.__radarMap.getCenter();
+    const box = 0.15; // ~15km, "esta zona"
+
+    const { data: nearby, error } = await supabase
+      .from('reports')
+      .select('category, description, created_at')
+      .eq('status', 'published')
+      .not('lat', 'is', null)
+      .gte('lat', center.lat - box)
+      .lte('lat', center.lat + box)
+      .gte('lon', center.lng - box)
+      .lte('lon', center.lng + box)
+      .order('created_at', { ascending: false })
+      .limit(15);
+
+    if (error) {
+      zoneSummaryPanel.textContent = 'No se pudo consultar los reportes. Intenta de nuevo.';
+      return;
+    }
+
+    try {
+      const res = await fetch('https://ifcgwnbaiozuvjorkcoc.supabase.co/functions/v1/summarize-zone', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: SUPABASE_PUBLISHABLE_KEY },
+        body: JSON.stringify({ reports: nearby || [] }),
+      });
+      const json = await res.json();
+      zoneSummaryPanel.textContent = json.summary || 'No se pudo generar el resumen.';
+    } catch {
+      zoneSummaryPanel.textContent = 'No se pudo generar el resumen. Intenta de nuevo.';
+    }
+  });
 </script>
 
 </body>
