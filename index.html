@@ -324,7 +324,9 @@
     reportBtn.disabled = false;
 
     if (error) {
-      reportStatus.textContent = 'No se pudo enviar el reporte. Intenta de nuevo.';
+      reportStatus.textContent = error.code === 'rate_limited'
+        ? error.message
+        : 'No se pudo enviar el reporte. Intenta de nuevo.';
       reportStatus.className = 'status-msg status-err';
       return;
     }
