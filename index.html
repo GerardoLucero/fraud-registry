@@ -2,7 +2,7 @@
 <html lang="es-MX">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Registro de Fraude — ¿Ya reportaron este número?</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <style>
@@ -13,34 +13,48 @@
     --text: #e8e9ec;
     --muted: #9aa0ab;
     --accent: #e34a4a;
+    --accent-dark: #b93838;
     --safe: #4ac97f;
     --warn: #e3b34a;
   }
   * { box-sizing: border-box; }
-  body {
+  html, body {
     margin: 0;
+    height: 100%;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     background: var(--bg);
     color: var(--text);
-    padding-bottom: 3rem;
+    overflow: hidden;
   }
+
+  /* ---- Layout: barra de búsqueda fija arriba, mapa ocupa todo lo demás ---- */
+  #app { height: 100dvh; display: flex; flex-direction: column; }
+
   header {
-    padding: 1.5rem 1rem 1rem;
-    text-align: center;
-  }
-  header h1 { font-size: 1.4rem; margin: 0 0 0.25rem; }
-  header p { color: var(--muted); margin: 0; font-size: 0.9rem; }
-  main { max-width: 480px; margin: 0 auto; padding: 0 1rem; }
-  section {
+    flex: 0 0 auto;
+    padding: 0.85rem 1rem;
     background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 1.25rem;
-    margin-bottom: 1rem;
+    border-bottom: 1px solid var(--border);
+    z-index: 20;
   }
-  section h2 { font-size: 1rem; margin: 0 0 0.75rem; color: var(--muted); font-weight: 600; }
+  header h1 {
+    font-size: 0.95rem;
+    margin: 0 0 0.6rem;
+    font-weight: 600;
+    color: var(--text);
+  }
+  .search-row { display: flex; gap: 0.5rem; }
+  .search-row input {
+    flex: 1;
+    min-width: 0;
+  }
+  .search-row button {
+    flex: 0 0 auto;
+    width: auto;
+    padding: 0.85rem 1.1rem;
+  }
+
   input, textarea, button {
-    width: 100%;
     font-size: 1rem;
     font-family: inherit;
     border-radius: 8px;
@@ -49,22 +63,31 @@
     color: var(--text);
     padding: 0.85rem;
   }
+  input, textarea { width: 100%; }
   input:focus, textarea:focus { outline: 2px solid var(--accent); border-color: transparent; }
-  textarea { resize: vertical; min-height: 80px; margin-top: 0.5rem; }
+  textarea { resize: vertical; min-height: 90px; margin-top: 0.5rem; }
   button {
-    margin-top: 0.75rem;
     background: var(--accent);
     border: none;
     font-weight: 600;
     cursor: pointer;
   }
+  button:hover { background: var(--accent-dark); }
   button:disabled { opacity: 0.5; cursor: wait; }
-  #search-results { margin-top: 1rem; }
+
+  /* ---- Resultados de búsqueda: panel flotante bajo la barra ---- */
+  #search-results {
+    position: relative;
+  }
+  #search-results:not(:empty) {
+    margin-top: 0.6rem;
+  }
   .result-card {
+    background: var(--card);
     border: 1px solid var(--border);
     border-radius: 8px;
     padding: 0.85rem;
-    margin-bottom: 0.5rem;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.35);
   }
   .badge {
     display: inline-block;
@@ -78,7 +101,84 @@
   .badge-low { background: rgba(227,179,74,0.15); color: var(--warn); }
   .badge-none { background: rgba(74,201,127,0.15); color: var(--safe); }
   .muted { color: var(--muted); font-size: 0.85rem; }
-  #map { height: 320px; border-radius: 8px; }
+  .result-card p { margin: 0.3rem 0; }
+
+  /* ---- Mapa: el elemento dominante de la pantalla ---- */
+  #map-wrap { flex: 1 1 auto; position: relative; min-height: 0; }
+  #map { width: 100%; height: 100%; }
+  .map-caption {
+    position: absolute;
+    bottom: 0.75rem;
+    left: 0.75rem;
+    background: rgba(26,29,36,0.9);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 0.35rem 0.85rem;
+    font-size: 0.78rem;
+    color: var(--muted);
+    z-index: 10;
+    pointer-events: none;
+  }
+
+  /* ---- Botón flotante para reportar ---- */
+  #fab {
+    position: absolute;
+    right: 1rem;
+    bottom: 1.25rem;
+    z-index: 15;
+    width: auto;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.9rem 1.3rem;
+    border-radius: 999px;
+    box-shadow: 0 8px 24px rgba(227,74,74,0.45);
+    font-size: 0.95rem;
+  }
+  #fab svg { width: 18px; height: 18px; flex: none; }
+
+  /* ---- Modal de reporte ---- */
+  #report-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.55);
+    display: none;
+    align-items: flex-end;
+    justify-content: center;
+    z-index: 30;
+  }
+  #report-overlay.open { display: flex; }
+  #report-modal {
+    width: 100%;
+    max-width: 480px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px 16px 0 0;
+    padding: 1.25rem 1.25rem calc(1.5rem + env(safe-area-inset-bottom));
+    max-height: 85vh;
+    overflow-y: auto;
+  }
+  @media (min-width: 600px) {
+    #report-overlay { align-items: center; }
+    #report-modal { border-radius: 16px; max-height: 90vh; }
+  }
+  .modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.75rem;
+  }
+  .modal-header h2 { font-size: 1.05rem; margin: 0; }
+  #report-close {
+    width: auto;
+    background: transparent;
+    border: none;
+    color: var(--muted);
+    font-size: 1.4rem;
+    line-height: 1;
+    padding: 0.25rem 0.5rem;
+    cursor: pointer;
+  }
   .status-msg { font-size: 0.9rem; margin-top: 0.5rem; }
   .status-ok { color: var(--safe); }
   .status-err { color: var(--accent); }
@@ -86,33 +186,39 @@
 </head>
 <body>
 
-<header>
-  <h1>¿Te llamó un número sospechoso?</h1>
-  <p>Busca si ya lo reportaron, o repórtalo tú en 10 segundos.</p>
-</header>
-
-<main>
-  <section id="search-section">
-    <h2>Buscar número</h2>
-    <input type="tel" id="search-input" placeholder="Ej. 55 1234 5678" autocomplete="tel" inputmode="tel">
-    <button id="search-btn">Buscar</button>
+<div id="app">
+  <header>
+    <h1>¿Te llamó un número sospechoso? Búscalo antes de contestar.</h1>
+    <div class="search-row">
+      <input type="tel" id="search-input" placeholder="Ej. 55 1234 5678" autocomplete="tel" inputmode="tel">
+      <button id="search-btn">Buscar</button>
+    </div>
     <div id="search-results"></div>
-  </section>
+  </header>
 
-  <section id="report-section">
-    <h2>Reportar un número</h2>
+  <div id="map-wrap">
+    <div id="map"></div>
+    <div class="map-caption">Reportes agregados por región (LADA), no ubicación exacta</div>
+
+    <button id="fab">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      Reportar número
+    </button>
+  </div>
+</div>
+
+<div id="report-overlay">
+  <div id="report-modal">
+    <div class="modal-header">
+      <h2>Reportar un número</h2>
+      <button id="report-close" aria-label="Cerrar">&times;</button>
+    </div>
     <input type="tel" id="report-phone" placeholder="Número que te llamó" autocomplete="tel" inputmode="tel" required>
     <textarea id="report-description" placeholder="¿Qué pasó? (ej. dijo ser del banco, pidió un código, cobranza falsa...)" required></textarea>
-    <button id="report-btn">Reportar</button>
+    <button id="report-btn" style="width:100%; margin-top:0.75rem;">Reportar</button>
     <div id="report-status" class="status-msg"></div>
-  </section>
-
-  <section id="map-section">
-    <h2>Mapa por región</h2>
-    <div id="map"></div>
-    <p class="muted">Agregado por código LADA, no ubicación exacta.</p>
-  </section>
-</main>
+  </div>
+</div>
 
 <script type="module">
   import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
@@ -133,11 +239,11 @@
   async function searchNumber() {
     const phone = normalizePhone(searchInput.value);
     if (phone.length < 8) {
-      searchResults.innerHTML = '<p class="status-msg status-err">Escribe un número válido.</p>';
+      searchResults.innerHTML = '<div class="result-card status-msg status-err">Escribe un número válido.</div>';
       return;
     }
     searchBtn.disabled = true;
-    searchResults.innerHTML = '<p class="muted">Buscando...</p>';
+    searchResults.innerHTML = '<div class="result-card muted">Buscando...</div>';
 
     const { data, error } = await supabase
       .from('phone_confidence')
@@ -148,7 +254,7 @@
     searchBtn.disabled = false;
 
     if (error) {
-      searchResults.innerHTML = '<p class="status-msg status-err">Error al buscar. Intenta de nuevo.</p>';
+      searchResults.innerHTML = '<div class="result-card status-msg status-err">Error al buscar. Intenta de nuevo.</div>';
       return;
     }
 
@@ -156,7 +262,7 @@
       searchResults.innerHTML = `
         <div class="result-card">
           <span class="badge badge-none">Sin reportes</span>
-          <p class="muted">Nadie ha reportado este número todavía. Si te pasó algo, sé el primero en reportarlo abajo.</p>
+          <p class="muted">Nadie ha reportado este número todavía. Si te pasó algo, repórtalo con el botón del mapa.</p>
         </div>`;
       return;
     }
@@ -175,11 +281,24 @@
   searchBtn.addEventListener('click', searchNumber);
   searchInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') searchNumber(); });
 
-  // --- Report form ---
+  // --- Report modal ---
+  const fab = document.getElementById('fab');
+  const overlay = document.getElementById('report-overlay');
+  const closeBtn = document.getElementById('report-close');
   const reportPhone = document.getElementById('report-phone');
   const reportDescription = document.getElementById('report-description');
   const reportBtn = document.getElementById('report-btn');
   const reportStatus = document.getElementById('report-status');
+
+  function openModal() {
+    overlay.classList.add('open');
+    setTimeout(() => reportPhone.focus(), 50);
+  }
+  function closeModal() { overlay.classList.remove('open'); }
+
+  fab.addEventListener('click', openModal);
+  closeBtn.addEventListener('click', closeModal);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(); });
 
   async function submitReport() {
     const phone = normalizePhone(reportPhone.value);
@@ -211,13 +330,15 @@
     reportStatus.className = 'status-msg status-ok';
     reportPhone.value = '';
     reportDescription.value = '';
+    setTimeout(closeModal, 1200);
   }
 
   reportBtn.addEventListener('click', submitReport);
 
-  // --- Map ---
+  // --- Map (elemento dominante de la pantalla) ---
   async function loadMap() {
-    const map = L.map('map').setView([23.6345, -102.5528], 5); // México
+    const map = L.map('map', { zoomControl: false }).setView([23.6345, -102.5528], 5);
+    L.control.zoom({ position: 'bottomleft' }).addTo(map);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap contributors',
       maxZoom: 12,
@@ -231,15 +352,16 @@
     if (error || !data) return;
 
     data.forEach((row) => {
-      const radius = Math.min(8 + row.total_reports * 2, 40);
+      const radius = Math.min(10 + row.total_reports * 3, 48);
       L.circleMarker([row.lat, row.lon], {
         radius,
         color: '#e34a4a',
+        weight: 2,
         fillColor: '#e34a4a',
-        fillOpacity: 0.4,
+        fillOpacity: 0.35,
       })
         .addTo(map)
-        .bindPopup(`<strong>${row.region}</strong><br>${row.total_reports} reportes`);
+        .bindPopup(`<strong>${row.region}</strong><br>${row.total_reports} reporte${row.total_reports === 1 ? '' : 's'}`);
     });
   }
 
