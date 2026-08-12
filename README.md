@@ -19,8 +19,9 @@ Registro comunitario de números de teléfono usados en fraudes en México. Repo
 
 - [x] Schema de Supabase (`reports`, `lada_coordinates`, vistas `phone_confidence` y `fraud_counts_by_lada`)
 - [x] Frontend MVP (búsqueda + formulario + mapa)
-- [ ] Seed de `lada_coordinates` (~300 códigos LADA de México)
-- [ ] Edge Function de corroboración (DeepSeek vía NVIDIA NIM) + flag a `pending` en reportes contradictorios
-- [ ] Aviso por correo (Resend) para revisión manual de casos contradictorios
+- [x] Seed parcial de `lada_coordinates` (~50 zonas metropolitanas principales, se amplía sobre la marcha)
+- [x] Edge Function `corroborate-report` desplegada — se dispara vía trigger de Postgres (pg_net + Vault de Supabase para el secreto compartido) en cada insert. No-op seguro si faltan las API keys.
+- [ ] **Pendiente en Supabase Dashboard → Settings → Edge Functions → Secrets:** `NVIDIA_NIM_API_KEY`, `RESEND_API_KEY`, `ALERT_EMAIL`, `FUNCTION_SECRET` (ver detalle en la conversación de la sesión que lo desplegó)
 - [ ] Rate limiting por IP en el insert público
 - [ ] Revisión de `legal-lead` sobre riesgo de difamación antes de lanzar público
+- [ ] Mejorar frontend: mapa más prominente, botón flotante para reportar
