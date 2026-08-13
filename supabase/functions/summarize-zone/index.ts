@@ -69,7 +69,7 @@ ${reportLines}
 
 ${sesnspLine(sesnsp) || 'Sin contexto oficial SESNSP disponible para esta zona.'}
 
-Escribe un resumen de 2-3 frases en espanol, tono directo y util (no alarmista, no minimices tampoco). Si no hay reportes en vivo pero SI hay contexto SESNSP, dilo claramente ("nadie ha reportado nada en vivo aqui, pero el historico oficial de la zona muestra..."). Si hay reportes en vivo, prioriza esos y usa el contexto SESNSP solo como referencia adicional. No inventes datos que no esten en la informacion de arriba.`
+Escribe 2-3 frases cortas en espanol mexicano, como si le mandaras un mensaje de texto a un amigo -- directo, natural, nada de tono de reporte o comunicado oficial. NO uses frases como "actividad delictiva considerable en terminos generales", "te sugiero mantener precauciones habituales" o cualquier cosa que suene a redaccion burocratica. Ve al grano: que paso (o no paso), que tan grave es, y una recomendacion breve si aplica. No alarmista, pero tampoco le restes importancia. Si no hay reportes en vivo pero SI hay contexto SESNSP, dilo claro y casual ("nadie ha reportado nada aqui todavia, pero esta zona historicamente tiene..."). Si hay reportes en vivo, esos van primero. No inventes datos que no esten arriba.`
 
   const nimRes = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
     method: 'POST',

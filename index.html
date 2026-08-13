@@ -962,22 +962,30 @@
     let sesnspContext = null;
     const { data: nearbyMunis } = await supabase
       .from('municipio_coordinates')
-      .select('cve_mun, municipio, estado')
+      .select('cve_mun, municipio, estado, lat, lon')
       .gte('lat', center.lat - box)
       .lte('lat', center.lat + box)
       .gte('lon', center.lng - box)
       .lte('lon', center.lng + box);
 
     if (nearbyMunis && nearbyMunis.length > 0) {
-      const { data: crimeRows } = await supabase
+      // El municipio de la ZONA es el mas cercano al centro, no el de mas delitos
+      // en el rango -- antes elegia "el peor cercano" en vez de "donde estas".
+      const withDist = nearbyMunis.map((m) => ({
+        ...m,
+        dist: Math.hypot(m.lat - center.lat, m.lon - center.lng),
+      }));
+      withDist.sort((a, b) => a.dist - b.dist);
+      const closest = withDist[0];
+
+      const { data: crimeRow } = await supabase
         .from('sesnsp_municipal_crime')
-        .select('cve_mun, total_delitos, total_robos, total_violentos')
-        .in('cve_mun', nearbyMunis.map((m) => m.cve_mun))
-        .order('total_delitos', { ascending: false })
-        .limit(1);
-      if (crimeRows && crimeRows.length > 0) {
-        const muni = nearbyMunis.find((m) => m.cve_mun === crimeRows[0].cve_mun);
-        sesnspContext = { municipio: muni.municipio, estado: muni.estado, ...crimeRows[0] };
+        .select('total_delitos, total_robos, total_violentos')
+        .eq('cve_mun', closest.cve_mun)
+        .maybeSingle();
+
+      if (crimeRow) {
+        sesnspContext = { municipio: closest.municipio, estado: closest.estado, ...crimeRow };
       }
     }
 
