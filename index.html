@@ -49,6 +49,18 @@
     white-space: nowrap;
   }
 
+  footer {
+    flex: 0 0 auto;
+    padding: 0.3rem 1rem;
+    font-size: 0.68rem;
+    line-height: 1.4;
+    color: var(--muted);
+    text-align: center;
+    background: var(--card);
+    border-top: 1px solid var(--border);
+  }
+  footer a { color: var(--muted); }
+
   /* ---- Ventana de tiempo: slider de días en el header ---- */
   #time-control {
     display: flex;
@@ -169,6 +181,7 @@
   .badge-none { background: rgba(74,201,127,0.15); color: var(--safe); }
   .muted { color: var(--muted); font-size: 0.85rem; }
   .result-card p { margin: 0.3rem 0; }
+  .disclaimer-line { color: var(--muted); font-size: 0.72rem; display: block; margin-top: 0.3rem; }
 
   /* ---- Mapa: el elemento dominante de la pantalla ---- */
   #map-wrap { flex: 1 1 auto; position: relative; min-height: 0; }
@@ -486,6 +499,11 @@
       </button>
     </div>
   </div>
+
+  <footer>
+    Contenido generado por usuarios, sin verificar ·
+    <a href="mailto:contacto@radarurbano.org">¿Un reporte te menciona injustamente? Escríbenos</a>
+  </footer>
 </div>
 
 <div id="search-overlay" class="sheet-overlay">
@@ -516,7 +534,8 @@
       <span id="location-status" class="muted"></span>
     </div>
     <input type="text" id="report-location-text" placeholder="O escribe la zona/colonia (opcional)">
-    <button id="report-btn" style="width:100%; margin-top:0.75rem;">Reportar</button>
+    <p class="disclaimer-line" style="margin-top:0.6rem;">Tu reporte se publica sin verificar. No lo uses para dañar a alguien a propósito — un reporte falso puede ser responsabilidad tuya, no de Radar Urbano.</p>
+    <button id="report-btn" style="width:100%; margin-top:0.5rem;">Reportar</button>
     <div id="report-status" class="status-msg"></div>
   </div>
 </div>
@@ -586,10 +605,11 @@
     searchResults.innerHTML = `
       <div class="result-card">
         <span class="badge ${isHighConfidence ? 'badge-high' : 'badge-low'}">
-          ${isHighConfidence ? 'Alta probabilidad de fraude' : 'Reportado — pocas coincidencias'}
+          ${isHighConfidence ? `${data.report_count} personas reportaron este número` : 'Reportado por pocas personas'}
         </span>
-        <p>${data.report_count} reporte${data.report_count === 1 ? '' : 's'} único${data.report_count === 1 ? '' : 's'}</p>
+        <p>${data.report_count} reporte${data.report_count === 1 ? '' : 's'} único${data.report_count === 1 ? '' : 's'}, sin verificar</p>
         <p class="muted">Último reporte: ${new Date(data.last_reported_at).toLocaleDateString('es-MX')}</p>
+        <p class="disclaimer-line">Reportes de usuarios, no verificados por Radar Urbano. No implica que el titular de este número haya cometido un delito.</p>
       </div>`;
   }
 
@@ -775,7 +795,7 @@
     const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
     const { data: incidentData, error: incidentError } = await supabase
       .from('reports')
-      .select('id, lat, lon, category, description, entities, created_at, duplicate_of')
+      .select('id, lat, lon, category, entities, created_at, duplicate_of')
       .not('lat', 'is', null)
       .gte('created_at', ninetyDaysAgo)
       .order('created_at', { ascending: false });
@@ -804,14 +824,14 @@
         });
         L.marker([row.lat, row.lon], { icon })
           .addTo(map)
-          .bindPopup(`<strong>⚠️ Actividad inusual</strong><br>${row.report_count} reportes en los últimos 7 días<br><span class="muted">${cats}</span>`);
+          .bindPopup(`<strong>⚠️ Más reportes de lo usual</strong><br>${row.report_count} reportes de usuarios en los últimos 7 días, sin verificar<br><span class="muted">${cats}</span>`);
       });
 
       const zones = trendData.length;
       const total = trendData.reduce((s, r) => s + r.report_count, 0);
       showToast(
-        '⚠️ Actividad inusual',
-        `${zones} zona${zones === 1 ? '' : 's'} con más reportes de lo normal esta semana (${total} en total). Búscalas en el mapa (⚠️).`,
+        '⚠️ Más reportes de lo usual',
+        `${zones} zona${zones === 1 ? '' : 's'} con más reportes de usuarios de lo normal esta semana (${total} en total, sin verificar). Búscalas en el mapa (⚠️).`,
         'tone-alert'
       );
     }
@@ -921,7 +941,7 @@
       const entityLine = entityBits.length ? `<br><span class="muted">${entityBits.join(' · ')}</span>` : '';
       const confirmCount = confirmations.get(row.id) || 0;
       const confirmLine = confirmCount > 0
-        ? `<br><span class="muted">Confirmado por ${confirmCount + 1} reporte${confirmCount + 1 === 1 ? '' : 's'}</span>`
+        ? `<br><span class="muted">Reportado por ${confirmCount + 1} persona${confirmCount + 1 === 1 ? '' : 's'}</span>`
         : '';
       const { fillOpacity, radius } = recencyStyle(row.created_at);
 
@@ -933,7 +953,7 @@
         fillOpacity,
       })
         .addTo(incidentLayer)
-        .bindPopup(`<strong>${label}</strong><br>${new Date(row.created_at).toLocaleDateString('es-MX')}${entityLine}${confirmLine}`);
+        .bindPopup(`<strong>${label}</strong><br>${new Date(row.created_at).toLocaleDateString('es-MX')}${entityLine}${confirmLine}<br><span class="disclaimer-line">Reporte de usuario, sin verificar</span>`);
     });
   }
 
@@ -1016,7 +1036,6 @@
     showToast('Ubicación', 'Obteniendo tu ubicación...');
 
     const center = await getZoneCenter();
-    const box = 0.15; // ~15km, "esta zona"
 
     // Llevar el mapa a la zona para que los marcadores rojos/azules se vean.
     // Zoom 12 es el máximo que sirve la capa de tiles (maxZoom: 12).
@@ -1030,81 +1049,18 @@
         : 'No se pudo usar tu ubicación — analizando lo que ves en el mapa...'
     );
 
-    const { data: nearby, error } = await supabase
-      .from('reports')
-      .select('category, description, created_at')
-      .eq('status', 'published')
-      .not('lat', 'is', null)
-      .gte('lat', center.lat - box)
-      .lte('lat', center.lat + box)
-      .gte('lon', center.lng - box)
-      .lte('lon', center.lng + box)
-      .order('created_at', { ascending: false })
-      .limit(15);
-
-    if (error) {
-      showToast('Error', 'No se pudo consultar los reportes. Intenta de nuevo.');
-      return;
-    }
-
-    // Contexto SESNSP de la zona -- especialmente util cuando no hay reportes en vivo:
-    // en vez de "no sabemos nada", el resumen puede decir "sin reportes en vivo, pero
-    // el historico oficial de esta zona muestra X delitos/año".
-    let sesnspContext = null;
-    const { data: nearbyMunis } = await supabase
-      .from('municipio_coordinates')
-      .select('cve_mun, municipio, estado, lat, lon')
-      .gte('lat', center.lat - box)
-      .lte('lat', center.lat + box)
-      .gte('lon', center.lng - box)
-      .lte('lon', center.lng + box);
-
-    if (nearbyMunis && nearbyMunis.length > 0) {
-      // El municipio de la ZONA es el mas cercano al centro, no el de mas delitos
-      // en el rango -- antes elegia "el peor cercano" en vez de "donde estas".
-      const withDist = nearbyMunis.map((m) => ({
-        ...m,
-        dist: Math.hypot(m.lat - center.lat, m.lon - center.lng),
-      }));
-      withDist.sort((a, b) => a.dist - b.dist);
-      const closest = withDist[0];
-
-      const { data: crimeRow } = await supabase
-        .from('sesnsp_municipal_crime')
-        .select('total_delitos, total_robos, total_violentos')
-        .eq('cve_mun', closest.cve_mun)
-        .maybeSingle();
-
-      if (crimeRow) {
-        sesnspContext = { municipio: closest.municipio, estado: closest.estado, ...crimeRow };
-      }
-    }
-
-    const count = nearby?.length || 0;
-    let tone, title;
-    if (count > 0) {
-      tone = 'tone-alert';
-      title = `${count} reporte${count === 1 ? '' : 's'} cerca`;
-    } else if (sesnspContext && sesnspContext.total_delitos > 1500) {
-      // Sin reportes EN VIVO, pero el historico oficial de la zona es alto --
-      // no es "seguro" (verde), es "sin datos recientes pero cuidado" (ambar).
-      tone = 'tone-warn';
-      title = 'Sin reportes en vivo — histórico alto';
-    } else {
-      tone = 'tone-clear';
-      title = 'Sin reportes cerca';
-    }
-
+    // La consulta a reportes (incluye texto libre) ahora vive del lado del servidor
+    // -- el navegador solo manda lat/lng, nunca descripciones crudas de terceros.
     try {
       const res = await fetch('https://ifcgwnbaiozuvjorkcoc.supabase.co/functions/v1/summarize-zone', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', apikey: SUPABASE_PUBLISHABLE_KEY },
-        body: JSON.stringify({ reports: nearby || [], sesnsp: sesnspContext }),
+        body: JSON.stringify({ lat: center.lat, lng: center.lng }),
       });
       const json = await res.json();
-      showToast(title, json.summary || 'No se pudo generar el resumen.', tone);
+      showToast(json.title || 'Resumen de zona', json.summary || 'No se pudo generar el resumen.', json.tone || 'tone-clear');
     } catch {
-      showToast(title, 'No se pudo generar el resumen. Intenta de nuevo.', tone);
+      showToast('Error', 'No se pudo generar el resumen. Intenta de nuevo.');
     }
   });
 </script>
