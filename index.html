@@ -449,7 +449,7 @@
     <h1>Radar Urbano</h1>
     <div id="time-control">
       <input type="range" id="time-filter" min="7" max="90" step="1" value="30" aria-label="Ventana de días a mostrar">
-      <span id="time-filter-label">30 días</span>
+      <span id="time-filter-label" title="Ventana de días · reportes visibles en el mapa">30 días</span>
     </div>
   </header>
 
@@ -880,6 +880,11 @@
       .filter((row) => new Date(row.created_at).getTime() >= cutoff)
       .filter((row) => activeCategories.has(row.category || 'sin_clasificar'));
 
+    // Con pocos reportes, mover el slider entre 7 y 90 días a veces no cambia
+    // ningún punto visible en el mapa -- sin este contador se ve como que el
+    // filtro no responde, aunque sí esté funcionando.
+    timeFilterLabel.textContent = `${days}d · ${visible.length}`;
+
     if (viewMode === 'heat') {
       const livePoints = visible.map((row) => {
         const ageDays = (Date.now() - new Date(row.created_at).getTime()) / (24 * 60 * 60 * 1000);
@@ -943,7 +948,6 @@
 
   const timeFilterLabel = document.getElementById('time-filter-label');
   timeFilter.addEventListener('input', () => {
-    timeFilterLabel.textContent = `${timeFilter.value} días`;
     renderIncidents();
   });
 
