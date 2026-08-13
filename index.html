@@ -304,6 +304,7 @@
   /* ---- Leyenda de capas del mapa ---- */
   .badge-phone { background: rgba(227,74,74,0.15); color: var(--accent); }
   .badge-incident { background: rgba(120,140,255,0.15); color: #8ca0ff; }
+  .badge-context { background: rgba(227,179,74,0.15); color: var(--warn); }
 
   /* ---- Toast del resumen de zona ---- */
   #zone-toast {
@@ -406,7 +407,8 @@
     <div id="category-chips"></div>
 
     <div class="map-caption">
-      <span class="badge badge-phone" style="margin:0 0.3rem 0 0;">●</span>fraude telefónico (por región)
+      <span class="badge badge-context" style="margin:0 0.3rem 0 0;">●</span>contexto histórico (SESNSP)
+      <span class="badge badge-phone" style="margin:0 0.3rem 0 0.6rem;">●</span>fraude telefónico
       <span class="badge badge-incident" style="margin:0 0.3rem 0 0.6rem;">●</span>otros incidentes
       <button id="heat-toggle" type="button">🔥 Calor</button>
     </div>
@@ -651,6 +653,32 @@
     // el tamaño final se asienta después del primer paint. Forzamos un recálculo.
     setTimeout(() => map.invalidateSize(), 100);
     window.addEventListener('resize', () => map.invalidateSize());
+
+    // Capa 0: contexto de incidencia delictiva oficial (SESNSP) -- fondo ambar tenue,
+    // por municipio. Es contexto historico, no reportes en vivo -- por eso va debajo
+    // de todo y sin competir visualmente con las capas 1 y 2.
+    const { data: sesnspData, error: sesnspError } = await supabase
+      .from('sesnsp_municipal_crime')
+      .select('total_delitos, total_robos, municipio_coordinates(municipio, estado, lat, lon)')
+      .order('total_delitos', { ascending: false });
+
+    if (!sesnspError && sesnspData) {
+      sesnspData.forEach((row) => {
+        const muni = row.municipio_coordinates;
+        if (!muni) return;
+        const radius = Math.min(6 + Math.sqrt(row.total_delitos) * 0.9, 55);
+        L.circleMarker([muni.lat, muni.lon], {
+          radius,
+          color: '#e3b34a',
+          weight: 1,
+          fillColor: '#e3b34a',
+          fillOpacity: 0.12,
+          interactive: true,
+        })
+          .addTo(map)
+          .bindPopup(`<strong>${muni.municipio}, ${muni.estado}</strong><br><span class="muted">Contexto SESNSP (histórico)</span><br>${row.total_delitos.toLocaleString('es-MX')} delitos/año · ${row.total_robos.toLocaleString('es-MX')} robos`);
+      });
+    }
 
     // Capa 1: fraude telefónico agregado por región (LADA) -- círculos rojos.
     const { data: ladaData, error: ladaError } = await supabase
