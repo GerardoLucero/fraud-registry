@@ -71,19 +71,30 @@ ${sesnspLine(sesnsp) || 'Sin contexto oficial SESNSP disponible para esta zona.'
 
 Escribe 2-3 frases cortas en espanol neutro de Mexico. El tono correcto es el de alguien que conoce la zona y te da un aviso rapido y directo -- ni el reporte de una dependencia de gobierno, ni un chat entre cuates con groserias o jerga de calle ("un chingo", "no manches", "aguas"). Nada de frases como "actividad delictiva considerable en terminos generales" o "te sugiero mantener precauciones habituales" -- pero tampoco caigas en slang. Punto medio: claro, humano, sin adornos. Ve al grano: que paso (o no paso), que tan grave es, y una recomendacion breve si aplica. No alarmista, pero tampoco le restes importancia. Si no hay reportes en vivo pero SI hay contexto SESNSP, dilo directo ("nadie ha reportado nada aqui todavia, pero esta zona historicamente tiene..."). Si hay reportes en vivo, esos van primero. No inventes datos que no esten arriba.`
 
-  const nimRes = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${NVIDIA_NIM_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: NIM_MODEL,
-      messages: [{ role: 'user', content: prompt }],
-      temperature: 0.3,
-      max_tokens: 200,
-    }),
-  })
+  // NIM a veces responde 529 "temporarily overloaded" -- transitorio, un reintento
+  // corto lo resuelve la mayoria de las veces en vez de mostrarle el error al usuario.
+  async function callNimOnce() {
+    return fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${NVIDIA_NIM_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: NIM_MODEL,
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.3,
+        max_tokens: 200,
+      }),
+    })
+  }
+
+  let nimRes = await callNimOnce()
+  if (!nimRes.ok && (nimRes.status === 529 || nimRes.status === 503)) {
+    console.warn(`NIM overloaded (${nimRes.status}), retrying once...`)
+    await new Promise((r) => setTimeout(r, 1200))
+    nimRes = await callNimOnce()
+  }
 
   if (!nimRes.ok) {
     console.error('NIM error', await nimRes.text())

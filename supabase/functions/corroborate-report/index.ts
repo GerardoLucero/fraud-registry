@@ -12,19 +12,29 @@ const NIM_MODEL = 'deepseek-ai/deepseek-v4-flash-0731'
 const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_KEY)
 
 async function callNim(prompt: string): Promise<any | null> {
-  const res = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${NVIDIA_NIM_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: NIM_MODEL,
-      messages: [{ role: 'user', content: prompt }],
-      temperature: 0.1,
-      max_tokens: 200,
-    }),
-  })
+  const doFetch = () =>
+    fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${NVIDIA_NIM_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: NIM_MODEL,
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.1,
+        max_tokens: 200,
+      }),
+    })
+
+  let res = await doFetch()
+  // NIM a veces responde 529 "temporarily overloaded" -- transitorio, un reintento
+  // corto evita que un reporte se quede sin clasificar por mala suerte de timing.
+  if (!res.ok && (res.status === 529 || res.status === 503)) {
+    console.warn(`NIM overloaded (${res.status}), retrying once...`)
+    await new Promise((r) => setTimeout(r, 1200))
+    res = await doFetch()
+  }
 
   if (!res.ok) {
     console.error('NIM error', await res.text())

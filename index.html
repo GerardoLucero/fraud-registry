@@ -180,16 +180,25 @@
     position: absolute;
     bottom: 0.75rem;
     left: 0.75rem;
+    max-width: min(58%, 340px);
     background: rgba(26,29,36,0.9);
     border: 1px solid var(--border);
-    border-radius: 999px;
-    padding: 0.35rem 0.85rem;
-    font-size: 0.78rem;
+    border-radius: 12px;
+    padding: 0.35rem 0.7rem;
+    font-size: 0.72rem;
     color: var(--muted);
     z-index: 10;
     pointer-events: none;
   }
-  .map-caption { display: flex; align-items: center; flex-wrap: wrap; gap: 0.2rem; }
+  .map-caption { display: flex; align-items: center; flex-wrap: wrap; gap: 0.15rem 0.35rem; }
+  .map-caption .legend-extra { display: inline; }
+  @media (max-width: 480px) {
+    /* En movil los botones flotantes viven en la esquina inferior derecha --
+       la leyenda se achica y se acota mas para no encimarse con ellos. */
+    .map-caption { max-width: 52%; font-size: 0.66rem; padding: 0.3rem 0.55rem; bottom: 0.6rem; left: 0.6rem; }
+    .map-caption .legend-extra { display: none; }
+    #heat-toggle { font-size: 0.62rem; padding: 0.1rem 0.4rem; }
+  }
   #heat-toggle {
     pointer-events: auto;
     width: auto;
@@ -409,9 +418,9 @@
     <div id="category-chips"></div>
 
     <div class="map-caption">
-      <span class="badge badge-context" style="margin:0 0.3rem 0 0;">◌</span>contexto histórico (SESNSP, solo con zoom)
-      <span class="badge badge-phone" style="margin:0 0.3rem 0 0.6rem;">●</span>fraude telefónico
-      <span class="badge badge-incident" style="margin:0 0.3rem 0 0.6rem;">●</span>otros incidentes
+      <span class="badge badge-context" style="margin:0 0.3rem 0 0;">◌</span>histórico<span class="legend-extra"> (SESNSP, solo con zoom)</span>
+      <span class="badge badge-phone" style="margin:0 0.3rem 0 0.6rem;">●</span>fraude<span class="legend-extra"> telefónico</span>
+      <span class="badge badge-incident" style="margin:0 0.3rem 0 0.6rem;">●</span><span class="legend-extra">otros </span>incidentes
       <button id="heat-toggle" type="button">🔥 Calor</button>
     </div>
 
