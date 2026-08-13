@@ -13,6 +13,11 @@ function corsHeaders(origin: string | null) {
   }
 }
 
+function sesnspLine(sesnsp: any): string {
+  if (!sesnsp) return ''
+  return `Contexto oficial (SESNSP, ${sesnsp.municipio}, ${sesnsp.estado}, ultimo ano disponible): ${sesnsp.total_delitos} delitos totales, ${sesnsp.total_robos} robos, ${sesnsp.total_violentos} delitos violentos. Esto es un promedio historico del municipio, no reportes en vivo de esta app.`
+}
+
 // Llamada directa desde el navegador (boton "que tan segura es esta zona").
 // Sin acceso a la base de datos: el cliente ya trajo los reportes cercanos via su
 // propia sesion anon (RLS solo deja ver status=published), esta funcion solo resume.
@@ -42,23 +47,29 @@ Deno.serve(async (req) => {
   }
 
   const reports = Array.isArray(body.reports) ? body.reports.slice(0, MAX_REPORTS) : []
+  const sesnsp = body.sesnsp ?? null
 
-  if (reports.length === 0) {
+  if (reports.length === 0 && !sesnsp) {
     return new Response(
-      JSON.stringify({ summary: 'No hay reportes recientes en esta zona. Eso no significa que sea segura, solo que nadie ha reportado nada aqui todavia.' }),
+      JSON.stringify({ summary: 'No hay reportes recientes en esta zona ni datos históricos disponibles todavía. Eso no significa que sea segura, solo que no tenemos información de esta zona.' }),
       { status: 200, headers: { ...headers, 'Content-Type': 'application/json' } }
     )
   }
 
-  const reportLines = reports
-    .map((r: any, i: number) => `${i + 1}. [${r.category || 'sin clasificar'}] ${r.description} (${r.created_at ? new Date(r.created_at).toLocaleDateString('es-MX') : 'fecha desconocida'})`)
-    .join('\n')
+  const reportLines = reports.length > 0
+    ? reports
+        .map((r: any, i: number) => `${i + 1}. [${r.category || 'sin clasificar'}] ${r.description} (${r.created_at ? new Date(r.created_at).toLocaleDateString('es-MX') : 'fecha desconocida'})`)
+        .join('\n')
+    : 'Ninguno.'
 
-  const prompt = `Eres el asistente de un radar urbano comunitario en Mexico. Un usuario quiere saber que tan segura es una zona ahora mismo. Aqui estan los reportes recientes cercanos:
+  const prompt = `Eres el asistente de un radar urbano comunitario en Mexico. Un usuario quiere saber que tan segura es una zona ahora mismo. Tienes dos fuentes, no las confundas:
 
+Reportes en vivo cercanos (de la app, recientes):
 ${reportLines}
 
-Escribe un resumen de 2-3 frases en espanol, tono directo y util (no alarmista, no minimices tampoco). Menciona patrones si los hay (ej "varios asaltos reportados de noche"). No inventes datos que no esten en la lista.`
+${sesnspLine(sesnsp) || 'Sin contexto oficial SESNSP disponible para esta zona.'}
+
+Escribe un resumen de 2-3 frases en espanol, tono directo y util (no alarmista, no minimices tampoco). Si no hay reportes en vivo pero SI hay contexto SESNSP, dilo claramente ("nadie ha reportado nada en vivo aqui, pero el historico oficial de la zona muestra..."). Si hay reportes en vivo, prioriza esos y usa el contexto SESNSP solo como referencia adicional. No inventes datos que no esten en la informacion de arriba.`
 
   const nimRes = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
     method: 'POST',

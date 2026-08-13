@@ -331,6 +331,7 @@
   }
   #zone-toast.visible { opacity: 1; transform: none; pointer-events: auto; }
   #zone-toast.tone-alert { border-left-color: var(--accent); }
+  #zone-toast.tone-warn { border-left-color: var(--warn); }
   #zone-toast.tone-clear { border-left-color: var(--safe); }
   #zone-toast-text { flex: 1; font-size: 0.88rem; line-height: 1.45; }
   #zone-toast-title {
@@ -343,6 +344,7 @@
     margin-bottom: 0.25rem;
   }
   #zone-toast.tone-alert #zone-toast-title { color: var(--accent); }
+  #zone-toast.tone-warn #zone-toast-title { color: var(--warn); }
   #zone-toast.tone-clear #zone-toast-title { color: var(--safe); }
   #zone-toast-close {
     width: auto;
@@ -654,31 +656,40 @@
     setTimeout(() => map.invalidateSize(), 100);
     window.addEventListener('resize', () => map.invalidateSize());
 
-    // Capa 0: contexto de incidencia delictiva oficial (SESNSP) -- fondo ambar tenue,
-    // por municipio. Es contexto historico, no reportes en vivo -- por eso va debajo
-    // de todo y sin competir visualmente con las capas 1 y 2.
+    // Capa 0: contexto de incidencia delictiva oficial (SESNSP) -- fondo ambar muy tenue,
+    // por municipio. Es contexto historico (no reportes en vivo), y solo se muestra al
+    // hacer zoom a una ciudad -- a nivel pais 400 circulos encimados se ven como una
+    // mancha naranja que tapa todo, en vez de contexto sutil.
     const { data: sesnspData, error: sesnspError } = await supabase
       .from('sesnsp_municipal_crime')
       .select('total_delitos, total_robos, municipio_coordinates(municipio, estado, lat, lon)')
       .order('total_delitos', { ascending: false });
 
     if (!sesnspError && sesnspData) {
-      sesnspData.forEach((row) => {
+      allSesnsp = sesnspData.filter((row) => row.municipio_coordinates);
+      allSesnsp.forEach((row) => {
         const muni = row.municipio_coordinates;
-        if (!muni) return;
-        const radius = Math.min(6 + Math.sqrt(row.total_delitos) * 0.9, 55);
+        const radius = Math.min(4 + Math.sqrt(row.total_delitos) * 0.35, 22);
         L.circleMarker([muni.lat, muni.lon], {
           radius,
           color: '#e3b34a',
           weight: 1,
           fillColor: '#e3b34a',
-          fillOpacity: 0.12,
-          interactive: true,
+          fillOpacity: 0.15,
         })
-          .addTo(map)
+          .addTo(contextLayer)
           .bindPopup(`<strong>${muni.municipio}, ${muni.estado}</strong><br><span class="muted">Contexto SESNSP (histórico)</span><br>${row.total_delitos.toLocaleString('es-MX')} delitos/año · ${row.total_robos.toLocaleString('es-MX')} robos`);
       });
     }
+
+    const CONTEXT_MIN_ZOOM = 8;
+    function syncContextLayerVisibility() {
+      const hasLayer = map.hasLayer(contextLayer);
+      if (map.getZoom() >= CONTEXT_MIN_ZOOM && !hasLayer) contextLayer.addTo(map);
+      else if (map.getZoom() < CONTEXT_MIN_ZOOM && hasLayer) map.removeLayer(contextLayer);
+    }
+    map.on('zoomend', syncContextLayerVisibility);
+    syncContextLayerVisibility();
 
     // Capa 1: fraude telefónico agregado por región (LADA) -- círculos rojos.
     const { data: ladaData, error: ladaError } = await supabase
@@ -721,8 +732,10 @@
 
   // --- Capa de incidentes filtrable (tiempo + categoría) ---
   let allIncidents = [];
+  let allSesnsp = [];
   const activeCategories = new Set();
   const incidentLayer = L.layerGroup();
+  const contextLayer = L.layerGroup();
   const timeFilter = document.getElementById('time-filter');
   const categoryChipsEl = document.getElementById('category-chips');
 
@@ -781,12 +794,20 @@
       .filter((row) => activeCategories.has(row.category || 'sin_clasificar'));
 
     if (viewMode === 'heat') {
-      const points = visible.map((row) => {
+      const livePoints = visible.map((row) => {
         const ageDays = (Date.now() - new Date(row.created_at).getTime()) / (24 * 60 * 60 * 1000);
         const recencyWeight = Math.max(0.3, 1 - ageDays / 90);
         const confirmWeight = 1 + (confirmations.get(row.id) || 0) * 0.5;
         return [row.lat, row.lon, recencyWeight * confirmWeight];
       });
+      // Contexto SESNSP tambien alimenta el calor, pero con peso bajo -- es fondo
+      // historico, no debe opacar zonas con reportes reales y recientes.
+      const contextPoints = allSesnsp.map((row) => {
+        const muni = row.municipio_coordinates;
+        const weight = Math.min(row.total_delitos / 3000, 1) * 0.5;
+        return [muni.lat, muni.lon, weight];
+      });
+      const points = [...contextPoints, ...livePoints];
       heatLayer = L.heatLayer(points, { radius: 28, blur: 22, maxZoom: 12, gradient: { 0.3: '#2a2e8c', 0.6: '#8ca0ff', 1: '#e34a4a' } });
       heatLayer.addTo(window.__radarMap);
       return;
@@ -846,7 +867,7 @@
     titleEl.textContent = title;
     zoneToastText.append(titleEl, document.createTextNode(message));
 
-    zoneToast.classList.remove('tone-alert', 'tone-clear');
+    zoneToast.classList.remove('tone-alert', 'tone-warn', 'tone-clear');
     if (tone) zoneToast.classList.add(tone);
     zoneToast.classList.add('visible');
     // Recorre los controles del mapa justo lo que mide el toast ya renderizado.
@@ -927,17 +948,51 @@
       return;
     }
 
+    // Contexto SESNSP de la zona -- especialmente util cuando no hay reportes en vivo:
+    // en vez de "no sabemos nada", el resumen puede decir "sin reportes en vivo, pero
+    // el historico oficial de esta zona muestra X delitos/año".
+    let sesnspContext = null;
+    const { data: nearbyMunis } = await supabase
+      .from('municipio_coordinates')
+      .select('cve_mun, municipio, estado')
+      .gte('lat', center.lat - box)
+      .lte('lat', center.lat + box)
+      .gte('lon', center.lng - box)
+      .lte('lon', center.lng + box);
+
+    if (nearbyMunis && nearbyMunis.length > 0) {
+      const { data: crimeRows } = await supabase
+        .from('sesnsp_municipal_crime')
+        .select('cve_mun, total_delitos, total_robos, total_violentos')
+        .in('cve_mun', nearbyMunis.map((m) => m.cve_mun))
+        .order('total_delitos', { ascending: false })
+        .limit(1);
+      if (crimeRows && crimeRows.length > 0) {
+        const muni = nearbyMunis.find((m) => m.cve_mun === crimeRows[0].cve_mun);
+        sesnspContext = { municipio: muni.municipio, estado: muni.estado, ...crimeRows[0] };
+      }
+    }
+
     const count = nearby?.length || 0;
-    const tone = count > 0 ? 'tone-alert' : 'tone-clear';
-    const title = count > 0
-      ? `${count} reporte${count === 1 ? '' : 's'} cerca`
-      : 'Sin reportes cerca';
+    let tone, title;
+    if (count > 0) {
+      tone = 'tone-alert';
+      title = `${count} reporte${count === 1 ? '' : 's'} cerca`;
+    } else if (sesnspContext && sesnspContext.total_delitos > 1500) {
+      // Sin reportes EN VIVO, pero el historico oficial de la zona es alto --
+      // no es "seguro" (verde), es "sin datos recientes pero cuidado" (ambar).
+      tone = 'tone-warn';
+      title = 'Sin reportes en vivo — histórico alto';
+    } else {
+      tone = 'tone-clear';
+      title = 'Sin reportes cerca';
+    }
 
     try {
       const res = await fetch('https://ifcgwnbaiozuvjorkcoc.supabase.co/functions/v1/summarize-zone', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', apikey: SUPABASE_PUBLISHABLE_KEY },
-        body: JSON.stringify({ reports: nearby || [] }),
+        body: JSON.stringify({ reports: nearby || [], sesnsp: sesnspContext }),
       });
       const json = await res.json();
       showToast(title, json.summary || 'No se pudo generar el resumen.', tone);
