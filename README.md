@@ -20,6 +20,7 @@ Radar comunitario de seguridad en México: fraudes telefónicos, robos, asaltos 
   - **Fusión de duplicados** (incidentes físicos): reportes muy cercanos en tiempo/lugar se comparan por texto; si describen el mismo evento, se enlazan (`duplicate_of`) en vez de aparecer como puntos repetidos
   - **Resumen de zona**: bajo demanda, resume en 2-3 frases los reportes cercanos a una ubicación
 - Geocoding: Nominatim (OpenStreetMap) del lado del servidor, tanto para el seed de LADAs como para `location_text` cuando no hay GPS
+- Contexto de incidencia delictiva oficial (SESNSP): tablas `municipio_coordinates` + `sesnsp_municipal_crime`, top 400 municipios por volumen de delitos (no los ~2478 exhaustivos — la mayoría son poblados de cientos de habitantes irrelevantes para el mapa). Fuente: espejo comunitario en GitHub ([lapanquecita/incidencia-delictiva](https://github.com/lapanquecita/incidencia-delictiva)) porque los endpoints oficiales (datos.gob.mx, gob.mx/sesnsp) bloquean tráfico automatizado (Akamai WAF, links de SharePoint frágiles). `pg_cron` + Edge Function `ingest-sesnsp` refrescan esto automáticamente el día 3 de cada mes a las 09:00 UTC
 - Confianza: Wilson score confidence interval sobre reportes únicos por número
 - Deploy: GitHub Actions → GitHub Pages en cada push a `main`
 - Anti-abuso: rate limit de 8 reportes/hora por IP (PostgREST `pgrst.db_pre_request`) + `ip_hash` (sha256 + salt, nunca la IP cruda) en cada reporte para detectar patrones de la misma fuente
@@ -34,7 +35,8 @@ Radar comunitario de seguridad en México: fraudes telefónicos, robos, asaltos 
 - [x] Edge Function `summarize-zone`: resumen de seguridad por zona bajo demanda
 - [x] Rate limiting por IP (8/hora) + `ip_hash` no reversible por reporte
 - [x] Recencia visual + heatmap + confirmación de duplicados en el mapa
-- [ ] Capa de contexto con datos abiertos de incidencia delictiva (SESNSP) como fondo del mapa — pendiente confirmar fuente/formato vigente
+- [x] Capa de contexto SESNSP: 400 municipios, carga inicial hecha + `pg_cron` mensual (`ingest-sesnsp`), verificado end-to-end
+- [ ] Mostrar la capa SESNSP en el mapa del frontend (los datos ya están en la base, falta el layer visual)
 - [ ] **Revisión de `legal-lead` sobre riesgo de difamación — pendiente, sitio ya público con reportes reales**
 - [ ] Activar "Enforce HTTPS" en GitHub Pages cuando el certificado de origen termine de emitirse
 - [ ] Clustering de marcadores (diferido hasta que haya más volumen de reportes reales)
