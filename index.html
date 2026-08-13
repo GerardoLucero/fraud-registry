@@ -698,7 +698,7 @@
       });
     }
 
-    const CONTEXT_MIN_ZOOM = 6;
+    const CONTEXT_MIN_ZOOM = 5;
     function syncContextLayerVisibility() {
       const hasLayer = map.hasLayer(contextLayer);
       if (map.getZoom() >= CONTEXT_MIN_ZOOM && !hasLayer) contextLayer.addTo(map);
