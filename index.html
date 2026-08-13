@@ -27,12 +27,16 @@
     overflow: hidden;
   }
 
-  /* ---- Layout: barra de búsqueda fija arriba, mapa ocupa todo lo demás ---- */
+  /* ---- Layout: barra compacta de marca arriba, mapa ocupa todo lo demás ---- */
   #app { height: 100dvh; display: flex; flex-direction: column; }
 
   header {
     flex: 0 0 auto;
-    padding: 0.85rem 1rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.9rem;
+    padding: 0.55rem 1rem;
     background: var(--card);
     border-bottom: 1px solid var(--border);
     z-index: 20;
@@ -42,12 +46,70 @@
     margin: 0;
     font-weight: 700;
     color: var(--text);
+    white-space: nowrap;
   }
-  header p.tagline {
+
+  /* ---- Ventana de tiempo: slider de días en el header ---- */
+  #time-control {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: 240px;
+  }
+  #time-filter-label {
+    flex: 0 0 auto;
     font-size: 0.78rem;
     color: var(--muted);
-    margin: 0.1rem 0 0.6rem;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
   }
+  #time-filter {
+    -webkit-appearance: none;
+    appearance: none;
+    flex: 1 1 auto;
+    min-width: 70px;
+    width: auto;
+    height: 28px;
+    padding: 0;
+    margin: 0;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+  }
+  #time-filter:focus { outline: none; }
+  #time-filter:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 4px; }
+  #time-filter::-webkit-slider-runnable-track {
+    height: 4px;
+    border-radius: 999px;
+    background: var(--border);
+  }
+  #time-filter::-moz-range-track {
+    height: 4px;
+    border-radius: 999px;
+    background: var(--border);
+  }
+  #time-filter::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    margin-top: -7px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: 2px solid var(--card);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.5);
+  }
+  #time-filter::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: 2px solid var(--card);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.5);
+  }
+
   .search-row { display: flex; gap: 0.5rem; }
   .search-row input {
     flex: 1;
@@ -80,7 +142,7 @@
   button:hover { background: var(--accent-dark); }
   button:disabled { opacity: 0.5; cursor: wait; }
 
-  /* ---- Resultados de búsqueda: panel flotante bajo la barra ---- */
+  /* ---- Resultados de búsqueda: dentro del panel de búsqueda ---- */
   #search-results {
     position: relative;
   }
@@ -128,25 +190,41 @@
     pointer-events: none;
   }
 
-  /* ---- Botón flotante para reportar ---- */
-  #fab {
+  /* ---- Tres acciones flotantes pares: buscar / zona / reportar ---- */
+  #map-actions {
     position: absolute;
     right: 1rem;
     bottom: 1.25rem;
     z-index: 15;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0.55rem;
+    max-width: calc(100% - 2rem);
+  }
+  #map-actions button {
     width: auto;
+    max-width: 100%;
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    padding: 0.9rem 1.3rem;
+    padding: 0.85rem 1.25rem;
     border-radius: 999px;
-    box-shadow: 0 8px 24px rgba(227,74,74,0.45);
-    font-size: 0.95rem;
+    font-size: 0.92rem;
+    white-space: nowrap;
   }
-  #fab svg { width: 18px; height: 18px; flex: none; }
+  #map-actions svg { width: 18px; height: 18px; flex: none; }
+  .fab-secondary {
+    background: rgba(26,29,36,0.95);
+    border: 1px solid var(--border);
+    color: var(--text);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+  }
+  .fab-secondary:hover { background: #232730; }
+  #fab { box-shadow: 0 8px 24px rgba(227,74,74,0.45); }
 
-  /* ---- Modal de reporte ---- */
-  #report-overlay {
+  /* ---- Paneles bajo demanda (reportar / buscar número) ---- */
+  .sheet-overlay {
     position: fixed;
     inset: 0;
     background: rgba(0,0,0,0.55);
@@ -155,8 +233,8 @@
     justify-content: center;
     z-index: 30;
   }
-  #report-overlay.open { display: flex; }
-  #report-modal {
+  .sheet-overlay.open { display: flex; }
+  .sheet {
     width: 100%;
     max-width: 480px;
     background: var(--card);
@@ -167,8 +245,8 @@
     overflow-y: auto;
   }
   @media (min-width: 600px) {
-    #report-overlay { align-items: center; }
-    #report-modal { border-radius: 16px; max-height: 90vh; }
+    .sheet-overlay { align-items: center; }
+    .sheet { border-radius: 16px; max-height: 90vh; }
   }
   .modal-header {
     display: flex;
@@ -177,7 +255,7 @@
     margin-bottom: 0.75rem;
   }
   .modal-header h2 { font-size: 1.05rem; margin: 0; }
-  #report-close {
+  .sheet-close {
     width: auto;
     background: transparent;
     border: none;
@@ -187,6 +265,8 @@
     padding: 0.25rem 0.5rem;
     cursor: pointer;
   }
+  .sheet-close:hover { background: transparent; color: var(--text); }
+  .sheet-intro { margin: 0 0 0.85rem; }
   .status-msg { font-size: 0.9rem; margin-top: 0.5rem; }
   .status-ok { color: var(--safe); }
   .status-err { color: var(--accent); }
@@ -213,47 +293,70 @@
   .badge-phone { background: rgba(227,74,74,0.15); color: var(--accent); }
   .badge-incident { background: rgba(120,140,255,0.15); color: #8ca0ff; }
 
-  /* ---- Controles del mapa: resumen de zona + filtros ---- */
-  #map-controls {
+  /* ---- Toast del resumen de zona ---- */
+  #zone-toast {
+    position: absolute;
+    top: 0.75rem;
+    left: 0.75rem;
+    right: 0.75rem;
+    max-width: 480px;
+    margin: 0 auto;
+    z-index: 20;
+    display: flex;
+    align-items: flex-start;
+    gap: 0.6rem;
+    background: rgba(26,29,36,0.97);
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--muted);
+    border-radius: 10px;
+    padding: 0.85rem 0.9rem;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    opacity: 0;
+    transform: translateY(-140%);
+    pointer-events: none;
+    transition: opacity 0.25s ease, transform 0.25s ease;
+  }
+  #zone-toast.visible { opacity: 1; transform: none; pointer-events: auto; }
+  #zone-toast.tone-alert { border-left-color: var(--accent); }
+  #zone-toast.tone-clear { border-left-color: var(--safe); }
+  #zone-toast-text { flex: 1; font-size: 0.88rem; line-height: 1.45; }
+  #zone-toast-title {
+    display: block;
+    font-weight: 700;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    color: var(--muted);
+    margin-bottom: 0.25rem;
+  }
+  #zone-toast.tone-alert #zone-toast-title { color: var(--accent); }
+  #zone-toast.tone-clear #zone-toast-title { color: var(--safe); }
+  #zone-toast-close {
+    width: auto;
+    flex: none;
+    background: transparent;
+    border: none;
+    color: var(--muted);
+    font-size: 1.3rem;
+    line-height: 1;
+    padding: 0 0.25rem;
+    cursor: pointer;
+  }
+  #zone-toast-close:hover { background: transparent; color: var(--text); }
+
+  /* ---- Filtros de categoría sobre el mapa ---- */
+  #category-chips {
     position: absolute;
     top: 0.75rem;
     left: 0.75rem;
     z-index: 10;
     max-width: 280px;
     display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-  #zone-summary-btn {
-    width: auto;
-    background: rgba(26,29,36,0.92);
-    border: 1px solid var(--border);
-    color: var(--text);
-    font-size: 0.85rem;
-    font-weight: 500;
-    padding: 0.6rem 0.9rem;
-    text-align: left;
-  }
-  #zone-summary-btn:hover { background: #1a1d24; }
-  #zone-summary-panel {
-    background: rgba(26,29,36,0.96);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 0.75rem;
-    font-size: 0.85rem;
-    line-height: 1.4;
-    box-shadow: 0 8px 24px rgba(0,0,0,0.35);
-  }
-  #zone-summary-panel.hidden { display: none; }
-  #time-filter {
-    padding: 0.5rem 0.7rem;
-    font-size: 0.82rem;
-    background: rgba(26,29,36,0.92);
-  }
-  #category-chips {
-    display: flex;
     flex-wrap: wrap;
     gap: 0.35rem;
+    /* el toast entra por arriba: los chips se recorren para no quedar tapados */
+    transform: translateY(var(--toast-offset, 0px));
+    transition: transform 0.25s ease;
   }
   #category-chips:empty { display: none; }
   .chip {
@@ -274,44 +377,64 @@
 <div id="app">
   <header>
     <h1>Radar Urbano</h1>
-    <div class="search-row">
-      <input type="tel" id="search-input" placeholder="Ej. 55 1234 5678" autocomplete="tel" inputmode="tel">
-      <button id="search-btn">Buscar</button>
+    <div id="time-control">
+      <input type="range" id="time-filter" min="7" max="90" step="1" value="30" aria-label="Ventana de días a mostrar">
+      <span id="time-filter-label">30 días</span>
     </div>
-    <div id="search-results"></div>
   </header>
 
   <div id="map-wrap">
     <div id="map"></div>
 
-    <div id="map-controls">
-      <button id="zone-summary-btn">📍 Seguridad de mi zona</button>
-      <div id="zone-summary-panel" class="hidden"></div>
-      <select id="time-filter">
-        <option value="7">Últimos 7 días</option>
-        <option value="30" selected>Últimos 30 días</option>
-        <option value="90">Últimos 90 días</option>
-      </select>
-      <div id="category-chips"></div>
+    <div id="zone-toast" role="status" aria-live="polite">
+      <div id="zone-toast-text"></div>
+      <button id="zone-toast-close" type="button" aria-label="Cerrar">&times;</button>
     </div>
+
+    <div id="category-chips"></div>
 
     <div class="map-caption">
       <span class="badge badge-phone" style="margin:0 0.3rem 0 0;">●</span>fraude telefónico (por región)
       <span class="badge badge-incident" style="margin:0 0.3rem 0 0.6rem;">●</span>otros incidentes
     </div>
 
-    <button id="fab">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-      Reportar
-    </button>
+    <div id="map-actions">
+      <button id="search-open-btn" class="fab-secondary" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/></svg>
+        Buscar número
+      </button>
+      <button id="zone-summary-btn" class="fab-secondary" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6l7-3z"/></svg>
+        ¿Qué tan segura es mi zona?
+      </button>
+      <button id="fab">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Reportar
+      </button>
+    </div>
   </div>
 </div>
 
-<div id="report-overlay">
-  <div id="report-modal">
+<div id="search-overlay" class="sheet-overlay">
+  <div class="sheet">
+    <div class="modal-header">
+      <h2>Buscar un número</h2>
+      <button id="search-close" class="sheet-close" aria-label="Cerrar">&times;</button>
+    </div>
+    <p class="muted sheet-intro">Consulta si un número ya fue reportado por fraude telefónico.</p>
+    <div class="search-row">
+      <input type="tel" id="search-input" placeholder="Ej. 55 1234 5678" autocomplete="tel" inputmode="tel">
+      <button id="search-btn">Buscar</button>
+    </div>
+    <div id="search-results"></div>
+  </div>
+</div>
+
+<div id="report-overlay" class="sheet-overlay">
+  <div id="report-modal" class="sheet">
     <div class="modal-header">
       <h2>Reportar un incidente</h2>
-      <button id="report-close" aria-label="Cerrar">&times;</button>
+      <button id="report-close" class="sheet-close" aria-label="Cerrar">&times;</button>
     </div>
     <textarea id="report-description" placeholder="¿Qué pasó? Fraude telefónico, robo, asalto, lo que haya sido — no hace falta elegir categoría, nosotros la detectamos." required></textarea>
     <input type="tel" id="report-phone" placeholder="Número de teléfono (si aplica)" autocomplete="tel" inputmode="tel" style="margin-top:0.5rem">
@@ -336,10 +459,23 @@
 
   const normalizePhone = (raw) => raw.replace(/\D/g, '');
 
-  // --- Search ---
+  // --- Search (panel bajo demanda) ---
   const searchInput = document.getElementById('search-input');
   const searchBtn = document.getElementById('search-btn');
   const searchResults = document.getElementById('search-results');
+  const searchOpenBtn = document.getElementById('search-open-btn');
+  const searchOverlay = document.getElementById('search-overlay');
+  const searchCloseBtn = document.getElementById('search-close');
+
+  function openSearch() {
+    searchOverlay.classList.add('open');
+    setTimeout(() => searchInput.focus(), 50);
+  }
+  function closeSearch() { searchOverlay.classList.remove('open'); }
+
+  searchOpenBtn.addEventListener('click', openSearch);
+  searchCloseBtn.addEventListener('click', closeSearch);
+  searchOverlay.addEventListener('click', (e) => { if (e.target === searchOverlay) closeSearch(); });
 
   async function searchNumber() {
     const phone = normalizePhone(searchInput.value);
@@ -597,13 +733,56 @@
       });
   }
 
-  timeFilter.addEventListener('change', renderIncidents);
+  const timeFilterLabel = document.getElementById('time-filter-label');
+  timeFilter.addEventListener('input', () => {
+    timeFilterLabel.textContent = `${timeFilter.value} días`;
+    renderIncidents();
+  });
 
   loadMap();
 
   // --- Resumen de zona con IA ---
   const zoneSummaryBtn = document.getElementById('zone-summary-btn');
-  const zoneSummaryPanel = document.getElementById('zone-summary-panel');
+  const zoneToast = document.getElementById('zone-toast');
+  const zoneToastText = document.getElementById('zone-toast-text');
+  const zoneToastClose = document.getElementById('zone-toast-close');
+
+  function showToast(title, message, tone = '') {
+    zoneToastText.innerHTML = '';
+    const titleEl = document.createElement('span');
+    titleEl.id = 'zone-toast-title';
+    titleEl.textContent = title;
+    zoneToastText.append(titleEl, document.createTextNode(message));
+
+    zoneToast.classList.remove('tone-alert', 'tone-clear');
+    if (tone) zoneToast.classList.add(tone);
+    zoneToast.classList.add('visible');
+    // Recorre los controles del mapa justo lo que mide el toast ya renderizado.
+    document.documentElement.style.setProperty('--toast-offset', `${zoneToast.offsetHeight + 12}px`);
+  }
+
+  function hideToast() {
+    zoneToast.classList.remove('visible');
+    document.documentElement.style.setProperty('--toast-offset', '0px');
+  }
+
+  zoneToastClose.addEventListener('click', hideToast);
+
+  // Punto verde de "aquí estás" / centro de la zona -- tercer color, distinto
+  // del rojo (fraude por LADA) y del azul (incidentes con GPS).
+  let zoneCenterMarker = null;
+  function markZoneCenter(center) {
+    if (zoneCenterMarker) window.__radarMap.removeLayer(zoneCenterMarker);
+    zoneCenterMarker = L.circleMarker([center.lat, center.lng], {
+      radius: 7,
+      color: '#ffffff',
+      weight: 2,
+      fillColor: '#4ac97f',
+      fillOpacity: 1,
+    })
+      .addTo(window.__radarMap)
+      .bindPopup(center.isRealLocation ? 'Tu ubicación' : 'Centro de la zona analizada');
+  }
 
   function getZoneCenter() {
     // Prioridad: tu ubicación real (GPS). Si no hay permiso, cae al centro visible del mapa.
@@ -622,14 +801,22 @@
 
   zoneSummaryBtn.addEventListener('click', async () => {
     if (!window.__radarMap) return;
-    zoneSummaryPanel.classList.remove('hidden');
-    zoneSummaryPanel.textContent = 'Obteniendo tu ubicación...';
+    showToast('Ubicación', 'Obteniendo tu ubicación...');
 
     const center = await getZoneCenter();
     const box = 0.15; // ~15km, "esta zona"
-    zoneSummaryPanel.textContent = center.isRealLocation
-      ? 'Analizando reportes cerca de ti...'
-      : 'No se pudo usar tu ubicación — analizando lo que ves en el mapa...';
+
+    // Llevar el mapa a la zona para que los marcadores rojos/azules se vean.
+    // Zoom 12 es el máximo que sirve la capa de tiles (maxZoom: 12).
+    window.__radarMap.setView([center.lat, center.lng], 12);
+    markZoneCenter(center);
+
+    showToast(
+      center.isRealLocation ? 'Tu zona' : 'Zona en pantalla',
+      center.isRealLocation
+        ? 'Analizando reportes cerca de ti...'
+        : 'No se pudo usar tu ubicación — analizando lo que ves en el mapa...'
+    );
 
     const { data: nearby, error } = await supabase
       .from('reports')
@@ -644,9 +831,15 @@
       .limit(15);
 
     if (error) {
-      zoneSummaryPanel.textContent = 'No se pudo consultar los reportes. Intenta de nuevo.';
+      showToast('Error', 'No se pudo consultar los reportes. Intenta de nuevo.');
       return;
     }
+
+    const count = nearby?.length || 0;
+    const tone = count > 0 ? 'tone-alert' : 'tone-clear';
+    const title = count > 0
+      ? `${count} reporte${count === 1 ? '' : 's'} cerca`
+      : 'Sin reportes cerca';
 
     try {
       const res = await fetch('https://ifcgwnbaiozuvjorkcoc.supabase.co/functions/v1/summarize-zone', {
@@ -655,9 +848,9 @@
         body: JSON.stringify({ reports: nearby || [] }),
       });
       const json = await res.json();
-      zoneSummaryPanel.textContent = json.summary || 'No se pudo generar el resumen.';
+      showToast(title, json.summary || 'No se pudo generar el resumen.', tone);
     } catch {
-      zoneSummaryPanel.textContent = 'No se pudo generar el resumen. Intenta de nuevo.';
+      showToast(title, 'No se pudo generar el resumen. Intenta de nuevo.', tone);
     }
   });
 </script>
