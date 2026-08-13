@@ -180,17 +180,20 @@
     position: absolute;
     bottom: 0.75rem;
     left: 0.75rem;
-    max-width: min(58%, 340px);
-    background: rgba(26,29,36,0.9);
+    max-width: min(50%, 260px);
+    background: rgba(26,29,36,0.92);
     border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 0.35rem 0.7rem;
-    font-size: 0.72rem;
+    border-radius: 10px;
+    padding: 0.4rem 0.6rem;
+    font-size: 0.7rem;
     color: var(--muted);
     z-index: 10;
     pointer-events: none;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.3rem 0.55rem;
   }
-  .map-caption { display: flex; align-items: center; flex-wrap: wrap; gap: 0.15rem 0.35rem; }
   .map-caption .legend-extra { display: inline; }
   .fab-short { display: none; }
   @media (max-width: 480px) {
@@ -208,9 +211,9 @@
   #heat-toggle {
     pointer-events: auto;
     width: auto;
-    margin-left: 0.5rem;
-    padding: 0.15rem 0.55rem;
-    font-size: 0.72rem;
+    padding: 0.1rem 0.4rem;
+    font-size: 0.85rem;
+    line-height: 1;
     background: transparent;
     border: 1px solid var(--border);
     color: var(--muted);
@@ -316,10 +319,23 @@
   #use-location-btn:hover { background: #1a1d24; }
   #report-location-text { margin-top: 0.5rem; }
 
-  /* ---- Leyenda de capas del mapa ---- */
-  .badge-phone { background: rgba(227,74,74,0.15); color: var(--accent); }
-  .badge-incident { background: rgba(120,140,255,0.15); color: #8ca0ff; }
-  .badge-context { background: rgba(227,179,74,0.15); color: var(--warn); }
+  /* ---- Leyenda de capas del mapa: puntos de color reales (no glifos de texto)
+     para que cada capa se identifique de un vistazo, todo centrado con flex. ---- */
+  .legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    white-space: nowrap;
+  }
+  .legend-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    flex: none;
+  }
+  .legend-dot-context { background: var(--warn); opacity: 0.5; border: 1.5px dashed var(--warn); box-sizing: content-box; }
+  .legend-dot-phone { background: var(--accent); }
+  .legend-dot-incident { background: #8ca0ff; }
 
   /* ---- Marcador de tendencia emergente: pulso animado, se distingue a simple
      vista de los puntos normales sin tener que abrir el popup. ---- */
@@ -448,11 +464,11 @@
     <div id="category-chips"></div>
 
     <div class="map-caption">
-      <span class="badge badge-context" style="margin:0 0.3rem 0 0;">◌</span>histórico<span class="legend-extra"> (SESNSP, solo con zoom)</span>
-      <span class="badge badge-phone" style="margin:0 0.3rem 0 0.6rem;">●</span>fraude<span class="legend-extra"> telefónico</span>
-      <span class="badge badge-incident" style="margin:0 0.3rem 0 0.6rem;">●</span><span class="legend-extra">otros </span>incidentes
-      <span style="margin:0 0.3rem 0 0.6rem;">⚠️</span><span class="legend-extra">tendencia</span>
-      <button id="heat-toggle" type="button">🔥 Calor</button>
+      <span class="legend-item"><span class="legend-dot legend-dot-context"></span>histórico</span>
+      <span class="legend-item"><span class="legend-dot legend-dot-phone"></span>fraude</span>
+      <span class="legend-item"><span class="legend-dot legend-dot-incident"></span>incidentes</span>
+      <span class="legend-item">⚠️<span class="legend-extra"> tendencia</span></span>
+      <button id="heat-toggle" type="button" title="Ver como mapa de calor">🔥</button>
     </div>
 
     <div id="map-actions">
@@ -919,7 +935,8 @@
   const heatToggle = document.getElementById('heat-toggle');
   heatToggle.addEventListener('click', () => {
     viewMode = viewMode === 'points' ? 'heat' : 'points';
-    heatToggle.textContent = viewMode === 'heat' ? '📍 Puntos' : '🔥 Calor';
+    heatToggle.textContent = viewMode === 'heat' ? '📍' : '🔥';
+    heatToggle.title = viewMode === 'heat' ? 'Ver como puntos' : 'Ver como mapa de calor';
     heatToggle.classList.toggle('active', viewMode === 'heat');
     renderIncidents();
   });

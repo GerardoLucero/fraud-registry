@@ -7,8 +7,9 @@ Radar comunitario de seguridad en México: fraudes telefónicos, robos, asaltos 
 - **Buscar**: escribe un número y ve si ya lo reportaron, con un score de confianza (Wilson score sobre reportes únicos).
 - **Reportar**: describe qué pasó — nada más. Sin dropdown de categorías, sin registro. La IA decide sola de qué tipo de incidente se trata a partir del texto.
 - **Ubicación**: para incidentes sin número (robo, asalto), un botón usa el GPS del navegador (difuminado a ~1km antes de guardarse); si no hay permiso, una zona/colonia escrita a mano se geocodifica del lado del servidor.
-- **Seguridad de mi zona**: botón flotante que centra el mapa en tu ubicación real y genera un resumen en lenguaje natural (IA) de lo reportado cerca, con alerta visual (rojo si hay reportes, verde si no).
-- **Mapa**: dos capas — fraude telefónico agregado por región (LADA), e incidentes físicos como puntos individuales con ubicación aproximada. Filtro de ventana de tiempo (slider de días en el header) y por categoría (chips dinámicos). Toggle para ver como mapa de calor. Los puntos más recientes se ven más opacos/grandes (recencia visual); eventos duplicados reportados por varias personas se fusionan en uno con contador de confirmaciones.
+- **Seguridad de mi zona**: botón flotante que centra el mapa en tu ubicación real y genera un resumen en lenguaje natural (IA) de lo reportado cerca — usa reportes en vivo si los hay, y si no, cae en el contexto histórico oficial (SESNSP) de tu municipio en vez de decir "no sabemos nada".
+- **Tendencias emergentes**: proactivo, sin que preguntes — si 3+ reportes distintos caen en el mismo punto (~1km) en menos de 7 días, se marca con un ícono pulsante ⚠️ y aparece un aviso automático al cargar el mapa.
+- **Mapa**: capa de fraude telefónico agregado por región (LADA), incidentes físicos individuales con ubicación aproximada, contexto histórico oficial (SESNSP) de fondo, y tendencias emergentes. Filtro de ventana de tiempo (slider de días en el header) y por categoría (chips dinámicos). Toggle para ver como mapa de calor. Los puntos más recientes se ven más opacos/grandes (recencia visual); eventos duplicados reportados por varias personas se fusionan en uno con contador de confirmaciones.
 
 ## Arquitectura
 
