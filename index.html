@@ -192,12 +192,18 @@
   }
   .map-caption { display: flex; align-items: center; flex-wrap: wrap; gap: 0.15rem 0.35rem; }
   .map-caption .legend-extra { display: inline; }
+  .fab-short { display: none; }
   @media (max-width: 480px) {
     /* En movil los botones flotantes viven en la esquina inferior derecha --
-       la leyenda se achica y se acota mas para no encimarse con ellos. */
-    .map-caption { max-width: 52%; font-size: 0.66rem; padding: 0.3rem 0.55rem; bottom: 0.6rem; left: 0.6rem; }
+       la leyenda se achica y se acota mas, Y los botones se acortan tambien,
+       para dejar un margen real entre los dos y que no se encimen. */
+    .map-caption { max-width: min(44vw, 200px); font-size: 0.64rem; padding: 0.3rem 0.5rem; bottom: 0.6rem; left: 0.6rem; }
     .map-caption .legend-extra { display: none; }
-    #heat-toggle { font-size: 0.62rem; padding: 0.1rem 0.4rem; }
+    #heat-toggle { font-size: 0.6rem; padding: 0.1rem 0.35rem; }
+    #map-actions { right: 0.6rem; bottom: 1rem; gap: 0.45rem; }
+    #map-actions button { padding: 0.7rem 1rem; font-size: 0.85rem; }
+    .fab-extra { display: none; }
+    .fab-short { display: inline; }
   }
   #heat-toggle {
     pointer-events: auto;
@@ -431,11 +437,11 @@
       </button>
       <button id="search-open-btn" class="fab-secondary" type="button">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/></svg>
-        Buscar número
+        Buscar<span class="fab-extra"> número</span>
       </button>
       <button id="zone-summary-btn" class="fab-secondary" type="button">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6l7-3z"/></svg>
-        ¿Qué tan segura es mi zona?
+        <span class="fab-extra">¿Qué tan segura es mi zona?</span><span class="fab-short">¿Segura?</span>
       </button>
     </div>
   </div>
