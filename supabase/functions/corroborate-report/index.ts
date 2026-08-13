@@ -42,18 +42,35 @@ async function callNim(prompt: string): Promise<any | null> {
   }
 }
 
-async function geocodeLocationText(locationText: string): Promise<{ lat: number; lon: number } | null> {
+async function nominatimSearch(query: string): Promise<{ lat: number; lon: number } | null> {
   const url =
     'https://nominatim.openstreetmap.org/search?' +
-    new URLSearchParams({ q: `${locationText}, Mexico`, format: 'json', limit: '1', countrycodes: 'mx' })
+    new URLSearchParams({ q: query, format: 'json', limit: '1', countrycodes: 'mx' })
+  const res = await fetch(url, {
+    headers: { 'User-Agent': 'radar-urbano/1.0 (contacto: luceroriosg@gmail.com)' },
+  })
+  if (!res.ok) return null
+  const data = await res.json()
+  if (!data || data.length === 0) return null
+  return { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon) }
+}
+
+// "Colonia X" a veces no matchea en Nominatim aunque "X" solo si -- ej "Colonia
+// Argentina Antigua" da 0 resultados, pero "Argentina Antigua" encuentra el barrio
+// exacto. Reintenta sin el prefijo antes de rendirse.
+const NEIGHBORHOOD_PREFIXES = /^(colonia|col\.?|barrio|fraccionamiento|fracc\.?|unidad habitacional)\s+/i
+
+async function geocodeLocationText(locationText: string): Promise<{ lat: number; lon: number } | null> {
   try {
-    const res = await fetch(url, {
-      headers: { 'User-Agent': 'radar-urbano/1.0 (contacto: luceroriosg@gmail.com)' },
-    })
-    if (!res.ok) return null
-    const data = await res.json()
-    if (!data || data.length === 0) return null
-    return { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon) }
+    const first = await nominatimSearch(`${locationText}, Mexico`)
+    if (first) return first
+
+    const stripped = locationText.replace(NEIGHBORHOOD_PREFIXES, '').trim()
+    if (stripped !== locationText && stripped.length > 0) {
+      const second = await nominatimSearch(`${stripped}, Mexico`)
+      if (second) return second
+    }
+    return null
   } catch (e) {
     console.error('geocoding error', e)
     return null
