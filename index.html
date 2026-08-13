@@ -321,6 +321,30 @@
   .badge-incident { background: rgba(120,140,255,0.15); color: #8ca0ff; }
   .badge-context { background: rgba(227,179,74,0.15); color: var(--warn); }
 
+  /* ---- Marcador de tendencia emergente: pulso animado, se distingue a simple
+     vista de los puntos normales sin tener que abrir el popup. ---- */
+  .trend-marker { position: relative; width: 28px; height: 28px; }
+  .trend-dot {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 15px;
+    filter: drop-shadow(0 0 2px rgba(0,0,0,0.6));
+  }
+  .trend-pulse {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: rgba(227,74,74,0.45);
+    animation: trend-pulse-anim 1.8s ease-out infinite;
+  }
+  @keyframes trend-pulse-anim {
+    0% { transform: scale(0.6); opacity: 0.8; }
+    100% { transform: scale(2.2); opacity: 0; }
+  }
+
   /* ---- Toast del resumen de zona ---- */
   #zone-toast {
     position: absolute;
@@ -427,6 +451,7 @@
       <span class="badge badge-context" style="margin:0 0.3rem 0 0;">◌</span>histórico<span class="legend-extra"> (SESNSP, solo con zoom)</span>
       <span class="badge badge-phone" style="margin:0 0.3rem 0 0.6rem;">●</span>fraude<span class="legend-extra"> telefónico</span>
       <span class="badge badge-incident" style="margin:0 0.3rem 0 0.6rem;">●</span><span class="legend-extra">otros </span>incidentes
+      <span style="margin:0 0.3rem 0 0.6rem;">⚠️</span><span class="legend-extra">tendencia</span>
       <button id="heat-toggle" type="button">🔥 Calor</button>
     </div>
 
@@ -743,6 +768,36 @@
       allIncidents = incidentData;
       buildCategoryChips();
       renderIncidents();
+    }
+
+    // Capa 3: tendencias emergentes -- puntos con 3+ reportes no duplicados en los
+    // ultimos 7 dias (ver vista trending_clusters). Proactivo: no hace falta
+    // preguntar, si hay algo se avisa solo al cargar el mapa.
+    const { data: trendData, error: trendError } = await supabase
+      .from('trending_clusters')
+      .select('*');
+
+    if (!trendError && trendData && trendData.length > 0) {
+      trendData.forEach((row) => {
+        const cats = (row.categories || []).map((c) => c.replace(/_/g, ' ')).join(', ') || 'sin clasificar';
+        const icon = L.divIcon({
+          className: 'trend-marker',
+          html: '<div class="trend-pulse"></div><div class="trend-dot">⚠️</div>',
+          iconSize: [28, 28],
+          iconAnchor: [14, 14],
+        });
+        L.marker([row.lat, row.lon], { icon })
+          .addTo(map)
+          .bindPopup(`<strong>⚠️ Actividad inusual</strong><br>${row.report_count} reportes en los últimos 7 días<br><span class="muted">${cats}</span>`);
+      });
+
+      const zones = trendData.length;
+      const total = trendData.reduce((s, r) => s + r.report_count, 0);
+      showToast(
+        '⚠️ Actividad inusual',
+        `${zones} zona${zones === 1 ? '' : 's'} con más reportes de lo normal esta semana (${total} en total). Búscalas en el mapa (⚠️).`,
+        'tone-alert'
+      );
     }
   }
 
