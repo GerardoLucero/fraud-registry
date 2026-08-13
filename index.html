@@ -409,7 +409,7 @@
     <div id="category-chips"></div>
 
     <div class="map-caption">
-      <span class="badge badge-context" style="margin:0 0.3rem 0 0;">●</span>contexto histórico (SESNSP)
+      <span class="badge badge-context" style="margin:0 0.3rem 0 0;">◌</span>contexto histórico (SESNSP, solo con zoom)
       <span class="badge badge-phone" style="margin:0 0.3rem 0 0.6rem;">●</span>fraude telefónico
       <span class="badge badge-incident" style="margin:0 0.3rem 0 0.6rem;">●</span>otros incidentes
       <button id="heat-toggle" type="button">🔥 Calor</button>
@@ -673,9 +673,10 @@
         L.circleMarker([muni.lat, muni.lon], {
           radius,
           color: '#e3b34a',
-          weight: 1,
+          weight: 1.5,
+          dashArray: '3,4', // punteado: se lee como "historico", distinto a los solidos (vivo)
           fillColor: '#e3b34a',
-          fillOpacity: 0.15,
+          fillOpacity: 0.18,
         })
           .addTo(contextLayer)
           .bindPopup(`<strong>${muni.municipio}, ${muni.estado}</strong><br><span class="muted">Contexto SESNSP (histórico)</span><br>${row.total_delitos.toLocaleString('es-MX')} delitos/año · ${row.total_robos.toLocaleString('es-MX')} robos`);
@@ -800,15 +801,22 @@
         const confirmWeight = 1 + (confirmations.get(row.id) || 0) * 0.5;
         return [row.lat, row.lon, recencyWeight * confirmWeight];
       });
-      // Contexto SESNSP tambien alimenta el calor, pero con peso bajo -- es fondo
-      // historico, no debe opacar zonas con reportes reales y recientes.
+      // Contexto SESNSP tambien alimenta el calor, con peso menor que lo vivo -- es
+      // fondo historico, no debe opacar zonas con reportes reales y recientes.
       const contextPoints = allSesnsp.map((row) => {
         const muni = row.municipio_coordinates;
-        const weight = Math.min(row.total_delitos / 3000, 1) * 0.5;
+        const weight = Math.min(row.total_delitos / 3000, 1) * 0.7;
         return [muni.lat, muni.lon, weight];
       });
       const points = [...contextPoints, ...livePoints];
-      heatLayer = L.heatLayer(points, { radius: 28, blur: 22, maxZoom: 12, gradient: { 0.3: '#2a2e8c', 0.6: '#8ca0ff', 1: '#e34a4a' } });
+      heatLayer = L.heatLayer(points, {
+        radius: 34,
+        blur: 24,
+        maxZoom: 12,
+        max: 0.6, // umbral bajo para llegar al rojo sin necesitar pesos extremos -- mas visible
+        minOpacity: 0.35, // que incluso zonas con poco peso se vean, no solo las mas intensas
+        gradient: { 0.15: '#2a2e8c', 0.4: '#8ca0ff', 0.7: '#e3b34a', 1: '#e34a4a' },
+      });
       heatLayer.addTo(window.__radarMap);
       return;
     }
