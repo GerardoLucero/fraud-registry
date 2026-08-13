@@ -189,6 +189,18 @@
     z-index: 10;
     pointer-events: none;
   }
+  .map-caption { display: flex; align-items: center; flex-wrap: wrap; gap: 0.2rem; }
+  #heat-toggle {
+    pointer-events: auto;
+    width: auto;
+    margin-left: 0.5rem;
+    padding: 0.15rem 0.55rem;
+    font-size: 0.72rem;
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--muted);
+  }
+  #heat-toggle.active { background: rgba(227,74,74,0.15); color: var(--accent); border-color: var(--accent); }
 
   /* ---- Tres acciones flotantes pares: buscar / zona / reportar ---- */
   #map-actions {
@@ -396,6 +408,7 @@
     <div class="map-caption">
       <span class="badge badge-phone" style="margin:0 0.3rem 0 0;">●</span>fraude telefónico (por región)
       <span class="badge badge-incident" style="margin:0 0.3rem 0 0.6rem;">●</span>otros incidentes
+      <button id="heat-toggle" type="button">🔥 Calor</button>
     </div>
 
     <div id="map-actions">
@@ -451,6 +464,7 @@
 <script type="module">
   import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
   import 'https://esm.sh/leaflet@1.9.4';
+  import 'https://esm.sh/leaflet.heat@0.2.0?deps=leaflet@1.9.4';
 
   const SUPABASE_URL = 'https://ifcgwnbaiozuvjorkcoc.supabase.co';
   const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_Z2tMpWR9mWfzttfralmWag_Aq7xSGkB';
@@ -665,7 +679,7 @@
     const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
     const { data: incidentData, error: incidentError } = await supabase
       .from('reports')
-      .select('lat, lon, category, description, entities, created_at')
+      .select('id, lat, lon, category, description, entities, created_at, duplicate_of')
       .not('lat', 'is', null)
       .gte('created_at', ninetyDaysAgo)
       .order('created_at', { ascending: false });
@@ -705,33 +719,83 @@
     });
   }
 
+  // Recencia visual: mas reciente = mas opaco/grande. 90 dias (la ventana que se trae)
+  // se mapea a la opacidad minima; hoy mismo, a la maxima. Refuerza que esto es un
+  // radar en vivo, no un archivo historico.
+  function recencyStyle(createdAt) {
+    const ageDays = (Date.now() - new Date(createdAt).getTime()) / (24 * 60 * 60 * 1000);
+    const t = Math.min(ageDays / 90, 1); // 0 = hoy, 1 = 90 dias
+    return {
+      fillOpacity: 0.6 - t * 0.42, // 0.60 -> 0.18
+      radius: 9 - t * 3, // 9 -> 6
+    };
+  }
+
+  let viewMode = 'points'; // 'points' | 'heat'
+  let heatLayer = null;
+
   function renderIncidents() {
     incidentLayer.clearLayers();
+    if (heatLayer) { window.__radarMap.removeLayer(heatLayer); heatLayer = null; }
+
     const days = Number(timeFilter.value);
     const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
 
-    allIncidents
-      .filter((row) => new Date(row.created_at).getTime() >= cutoff)
-      .filter((row) => activeCategories.has(row.category || 'sin_clasificar'))
-      .forEach((row) => {
-        const label = (row.category || 'incidente').replace(/_/g, ' ');
-        const entityBits = [];
-        if (row.entities?.time_of_day) entityBits.push(row.entities.time_of_day);
-        if (row.entities?.weapon) entityBits.push(row.entities.weapon);
-        if (row.entities?.vehicle) entityBits.push(row.entities.vehicle);
-        const entityLine = entityBits.length ? `<br><span class="muted">${entityBits.join(' · ')}</span>` : '';
+    // Cuantos reportes confirman cada evento canonico (duplicate_of === null).
+    const confirmations = new Map();
+    allIncidents.forEach((row) => {
+      if (row.duplicate_of) confirmations.set(row.duplicate_of, (confirmations.get(row.duplicate_of) || 0) + 1);
+    });
 
-        L.circleMarker([row.lat, row.lon], {
-          radius: 8,
-          color: '#8ca0ff',
-          weight: 2,
-          fillColor: '#8ca0ff',
-          fillOpacity: 0.5,
-        })
-          .addTo(incidentLayer)
-          .bindPopup(`<strong>${label}</strong><br>${new Date(row.created_at).toLocaleDateString('es-MX')}${entityLine}`);
+    const visible = allIncidents
+      .filter((row) => !row.duplicate_of) // los duplicados no se dibujan aparte, ya cuentan arriba
+      .filter((row) => new Date(row.created_at).getTime() >= cutoff)
+      .filter((row) => activeCategories.has(row.category || 'sin_clasificar'));
+
+    if (viewMode === 'heat') {
+      const points = visible.map((row) => {
+        const ageDays = (Date.now() - new Date(row.created_at).getTime()) / (24 * 60 * 60 * 1000);
+        const recencyWeight = Math.max(0.3, 1 - ageDays / 90);
+        const confirmWeight = 1 + (confirmations.get(row.id) || 0) * 0.5;
+        return [row.lat, row.lon, recencyWeight * confirmWeight];
       });
+      heatLayer = L.heatLayer(points, { radius: 28, blur: 22, maxZoom: 12, gradient: { 0.3: '#2a2e8c', 0.6: '#8ca0ff', 1: '#e34a4a' } });
+      heatLayer.addTo(window.__radarMap);
+      return;
+    }
+
+    visible.forEach((row) => {
+      const label = (row.category || 'incidente').replace(/_/g, ' ');
+      const entityBits = [];
+      if (row.entities?.time_of_day) entityBits.push(row.entities.time_of_day);
+      if (row.entities?.weapon) entityBits.push(row.entities.weapon);
+      if (row.entities?.vehicle) entityBits.push(row.entities.vehicle);
+      const entityLine = entityBits.length ? `<br><span class="muted">${entityBits.join(' · ')}</span>` : '';
+      const confirmCount = confirmations.get(row.id) || 0;
+      const confirmLine = confirmCount > 0
+        ? `<br><span class="muted">Confirmado por ${confirmCount + 1} reporte${confirmCount + 1 === 1 ? '' : 's'}</span>`
+        : '';
+      const { fillOpacity, radius } = recencyStyle(row.created_at);
+
+      L.circleMarker([row.lat, row.lon], {
+        radius: confirmCount > 0 ? radius + 3 : radius,
+        color: '#8ca0ff',
+        weight: 2,
+        fillColor: '#8ca0ff',
+        fillOpacity,
+      })
+        .addTo(incidentLayer)
+        .bindPopup(`<strong>${label}</strong><br>${new Date(row.created_at).toLocaleDateString('es-MX')}${entityLine}${confirmLine}`);
+    });
   }
+
+  const heatToggle = document.getElementById('heat-toggle');
+  heatToggle.addEventListener('click', () => {
+    viewMode = viewMode === 'points' ? 'heat' : 'points';
+    heatToggle.textContent = viewMode === 'heat' ? '📍 Puntos' : '🔥 Calor';
+    heatToggle.classList.toggle('active', viewMode === 'heat');
+    renderIncidents();
+  });
 
   const timeFilterLabel = document.getElementById('time-filter-label');
   timeFilter.addEventListener('input', () => {

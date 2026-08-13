@@ -42,6 +42,24 @@ async function callNim(prompt: string): Promise<any | null> {
   }
 }
 
+async function geocodeLocationText(locationText: string): Promise<{ lat: number; lon: number } | null> {
+  const url =
+    'https://nominatim.openstreetmap.org/search?' +
+    new URLSearchParams({ q: `${locationText}, Mexico`, format: 'json', limit: '1', countrycodes: 'mx' })
+  try {
+    const res = await fetch(url, {
+      headers: { 'User-Agent': 'radar-urbano/1.0 (contacto: luceroriosg@gmail.com)' },
+    })
+    if (!res.ok) return null
+    const data = await res.json()
+    if (!data || data.length === 0) return null
+    return { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon) }
+  } catch (e) {
+    console.error('geocoding error', e)
+    return null
+  }
+}
+
 // Este endpoint solo lo llama el trigger de Postgres (via pg_net), nunca el navegador.
 // Autenticacion propia por header compartido en vez de JWT de usuario -- por eso verify_jwt=false.
 Deno.serve(async (req) => {
@@ -61,9 +79,21 @@ Deno.serve(async (req) => {
     return new Response('bad payload', { status: 400 })
   }
 
+  // 0. Geocoding: si escribieron una zona/colonia en vez de dar GPS, la convertimos
+  // a coordenadas aproximadas para que el reporte SI aparezca en el mapa.
+  // El trigger de fuzzing en UPDATE se encarga de difuminarlas al guardarse.
+  if (newRow.lat == null && newRow.location_text) {
+    const geo = await geocodeLocationText(newRow.location_text)
+    if (geo) {
+      await supabaseAdmin.from('reports').update({ lat: geo.lat, lon: geo.lon }).eq('id', newRow.id)
+      newRow.lat = Math.round(geo.lat * 100) / 100
+      newRow.lon = Math.round(geo.lon * 100) / 100
+    }
+  }
+
   if (!NVIDIA_NIM_API_KEY) {
     console.error('NVIDIA_NIM_API_KEY not set, skipping classification/corroboration')
-    return new Response('ok: skipped, no API key configured', { status: 200 })
+    return new Response('ok: geocoded if applicable, rest skipped (no API key)', { status: 200 })
   }
 
   // 1. Clasificacion + extraccion de entidades: todo reporte se etiqueta y se le
@@ -98,32 +128,20 @@ Responde UNICAMENTE JSON valido: {"category": "...", "time_of_day": null, "weapo
 
   // 2. Corroboracion: solo aplica a reportes con numero de telefono (es la unica
   // categoria con una identidad natural para comparar -- "mismo numero, mismo patron?").
-  // Incidentes fisicos (robo/asalto) no tienen ese ancla todavia, se dejan sin este paso.
-  if (!newRow.phone_number) {
-    return new Response('ok: classified, no phone to corroborate', { status: 200 })
-  }
+  if (newRow.phone_number) {
+    const { data: existing, error } = await supabaseAdmin
+      .from('reports')
+      .select('id, description')
+      .eq('phone_number', newRow.phone_number)
+      .eq('status', 'published')
+      .neq('id', newRow.id)
 
-  const { data: existing, error } = await supabaseAdmin
-    .from('reports')
-    .select('id, description')
-    .eq('phone_number', newRow.phone_number)
-    .eq('status', 'published')
-    .neq('id', newRow.id)
+    if (!error && existing && existing.length > 0) {
+      const priorDescriptions = existing
+        .map((r: { description: string }, i: number) => `Reporte previo ${i + 1}: ${r.description}`)
+        .join('\n')
 
-  if (error) {
-    console.error('db error fetching prior reports', error)
-    return new Response('db error', { status: 500 })
-  }
-
-  if (!existing || existing.length === 0) {
-    return new Response('ok: classified, no prior reports to corroborate', { status: 200 })
-  }
-
-  const priorDescriptions = existing
-    .map((r: { description: string }, i: number) => `Reporte previo ${i + 1}: ${r.description}`)
-    .join('\n')
-
-  const corroborationPrompt = `Eres un analista antifraude. Dos o mas personas reportaron el MISMO numero telefonico como fraude en un registro publico mexicano. Decide si las descripciones describen el MISMO patron de estafa (corroboran) o describen situaciones INCOMPATIBLES entre si (contradicen -- senal de posible abuso del sistema para danar a un tercero, no fraude real).
+      const corroborationPrompt = `Eres un analista antifraude. Dos o mas personas reportaron el MISMO numero telefonico como fraude en un registro publico mexicano. Decide si las descripciones describen el MISMO patron de estafa (corroboran) o describen situaciones INCOMPATIBLES entre si (contradicen -- senal de posible abuso del sistema para danar a un tercero, no fraude real).
 
 ${priorDescriptions}
 
@@ -131,30 +149,63 @@ Reporte nuevo: ${newRow.description}
 
 Responde UNICAMENTE con JSON valido, sin texto adicional: {"verdict": "corroborates" | "contradicts", "reason": "una frase breve"}`
 
-  const verdict = await callNim(corroborationPrompt)
-  if (!verdict || verdict.verdict !== 'contradicts') {
-    return new Response('ok: classified, corroborates or unparseable', { status: 200 })
+      const verdict = await callNim(corroborationPrompt)
+      if (verdict?.verdict === 'contradicts') {
+        await supabaseAdmin.from('reports').update({ status: 'pending' }).eq('id', newRow.id)
+
+        if (RESEND_API_KEY && ALERT_EMAIL) {
+          await fetch('https://api.resend.com/emails', {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              from: 'Radar Urbano <onboarding@resend.dev>',
+              to: [ALERT_EMAIL],
+              subject: `Reportes contradictorios: ${newRow.phone_number}`,
+              text: `El numero ${newRow.phone_number} tiene reportes que no coinciden.\n\nMotivo (DeepSeek): ${verdict.reason}\n\nRevisa en el Table Editor de Supabase, tabla "reports", status=pending, id=${newRow.id}.`,
+            }),
+          })
+        }
+        return new Response('ok: flagged pending', { status: 200 })
+      }
+    }
   }
 
-  await supabaseAdmin.from('reports').update({ status: 'pending' }).eq('id', newRow.id)
+  // 3. Fusion de duplicados: incidentes fisicos muy cercanos en tiempo/lugar pueden
+  // ser el MISMO evento visto por varias personas. En vez de mostrar puntos repetidos
+  // en el mapa, el reporte nuevo se enlaza al original via duplicate_of.
+  if (newRow.lat != null && newRow.lon != null) {
+    const seventyTwoHoursAgo = new Date(Date.now() - 72 * 60 * 60 * 1000).toISOString()
+    const { data: nearby } = await supabaseAdmin
+      .from('reports')
+      .select('id, description')
+      .eq('status', 'published')
+      .is('duplicate_of', null)
+      .eq('lat', newRow.lat)
+      .eq('lon', newRow.lon)
+      .gte('created_at', seventyTwoHoursAgo)
+      .neq('id', newRow.id)
+      .limit(5)
 
-  if (RESEND_API_KEY && ALERT_EMAIL) {
-    await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${RESEND_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        from: 'Radar Urbano <onboarding@resend.dev>',
-        to: [ALERT_EMAIL],
-        subject: `Reportes contradictorios: ${newRow.phone_number}`,
-        text: `El numero ${newRow.phone_number} tiene reportes que no coinciden.\n\nMotivo (DeepSeek): ${verdict.reason}\n\nRevisa en el Table Editor de Supabase, tabla "reports", status=pending, id=${newRow.id}.`,
-      }),
-    })
-  } else {
-    console.warn('RESEND_API_KEY or ALERT_EMAIL not set, skipping email alert. Row flagged pending regardless.')
+    if (nearby && nearby.length > 0) {
+      const candidateLines = nearby.map((r: { id: string; description: string }, i: number) => `${i + 1}. [id:${r.id}] ${r.description}`).join('\n')
+      const dedupePrompt = `Eres un analista de un radar urbano comunitario. Alguien reporto un incidente muy cerca en tiempo y lugar de otros reportes existentes. Decide si describe el MISMO evento que alguno de ellos (mismo hecho visto o vivido por distintas personas) o si es un evento DIFERENTE que coincide en zona por casualidad.
+
+Reportes existentes cercanos:
+${candidateLines}
+
+Reporte nuevo: ${newRow.description}
+
+Si es el MISMO evento que alguno, responde con el id exacto de ESE reporte. Si es distinto a todos, responde "null".
+Responde UNICAMENTE JSON valido: {"same_event_id": "uuid-o-null"}`
+
+      const dedupe = await callNim(dedupePrompt)
+      const matchId = dedupe?.same_event_id
+      if (matchId && matchId !== 'null' && nearby.some((c: { id: string }) => c.id === matchId)) {
+        await supabaseAdmin.from('reports').update({ duplicate_of: matchId }).eq('id', newRow.id)
+        return new Response('ok: linked as duplicate', { status: 200 })
+      }
+    }
   }
 
-  return new Response('ok: flagged pending', { status: 200 })
+  return new Response('ok: classified', { status: 200 })
 })
